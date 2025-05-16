@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MTG AI Deck Builder</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>JJ's Custom Deck Builder</h1>
+    </header>
+    <main>
+        <section id="prompt-section">
+            <h2>Welcome! Let's Build Your Deck</h2>
+            <p>Follow the prompts to create a uniquely themed and ready to print commander deck!</p>
+            <h3 class="form-title">Deck Preferences & Parameters</h3>
+            <form id="deck-theme-form">
+                <div class="parameter-group">
+                    <div class="parameter-input">
+                        <label for="preferred-theme">What is your preferred theme for the deck?</label>
+                        <input type="text" id="preferred-theme" name="preferred-theme" placeholder="e.g., Dragons, Cyberpunk, Eldritch Horror" required>
+                    </div>
+                </div>
+                <div class="parameter-group">
+                    <div class="parameter-input">
+                        <label for="playstyle">What playstyle or deck type are you aiming for?</label>
+                        <input type="text" id="playstyle" name="playstyle" placeholder="e.g., Aggro, Control, Combo, Tribal" required>
+                    </div>
+                </div>
+                <div class="parameter-group">
+                    <div class="parameter-input">
+                        <label for="customization-level">How would you like to customize your deck?</label>
+                        <select id="customization-level" class="parameter-select">
+                            <option value="full">Full Custom (Custom Names + Art)</option>
+                            <option value="partial">Partial Custom (Real Names + Custom Art)</option>
+                            <option value="standard">Standard (Real Cards Only)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="parameter-group">
+                    <div class="parameter-input">
+                        <label for="power-level">What power level are you aiming for?</label>
+                        <select id="power-level" class="parameter-select">
+                            <option value="casual">Casual (Fun-focused)</option>
+                            <option value="focused">Focused (Balanced)</option>
+                            <option value="optimized">Optimized (Strong)</option>
+                            <option value="competitive">Competitive (High Power)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="parameter-group">
+                    <div class="parameter-input">
+                        <label for="budget-range">What's your budget range?</label>
+                        <select id="budget-range" class="parameter-select">
+                            <option value="budget">Budget ($0-50)</option>
+                            <option value="moderate">Moderate ($50-200)</option>
+                            <option value="premium">Premium ($200-500)</option>
+                            <option value="unlimited">Unlimited</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="parameter-group">
+                    <div class="parameter-input">
+                        <label for="additional-preferences">Any specific preferences or requirements?</label>
+                        <textarea id="additional-preferences" class="parameter-textarea" 
+                                  placeholder="e.g., I want to focus on token generation, or I prefer instant-speed interaction..."></textarea>
+                    </div>
+                </div>
+                <button type="submit">Generate Ideas</button>
+            </form>
+        </section>
+        <section id="results-section" style="display: none;">
+            <pre style="color:#f4f4f4; background:none; font-size:1.2em; text-align:center; margin-bottom:0;">
+════════════════════════════════════════════════════════
+        Choose your commander!
+════════════════════════════════════════════════════════
+</pre>
+            <div id="results" class="results-section" style="display: none;">
+                <div id="commander-options" class="commander-options"></div>
+                <div id="selected-commander" class="selected-commander"></div>
+                
+                <!-- Add Next Step button for commander selection -->
+                <div class="commander-selection-actions">
+                    <button id="next-step-commander" class="submit-button" disabled>Select a Commander</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- New Commander Analysis Section -->
+        <div id="commander-analysis-section" style="display: none;">
+            <div class="analysis-container">
+                <h2>Commander Analysis</h2>
+                <div class="selected-commander-analysis">
+                    <div class="commander-card-display"></div>
+                    <div class="commander-details">
+                        <h3>Selected Commander</h3>
+                        <div class="commander-name"></div>
+                        <div class="commander-type"></div>
+                        <div class="commander-abilities"></div>
+                    </div>
+                </div>
+                <div class="ai-analysis">
+                    <h3>Thematic Essence</h3>
+                    <div id="commander-analysis" class="analysis-content"></div>
+                </div>
+                <div class="customization-section">
+                    <h3>Customization Options</h3>
+                    <div class="custom-name-section">
+                        <label for="custom-commander-name">Custom Commander Name:</label>
+                        <input type="text" id="custom-commander-name" placeholder="Enter a custom name for your commander">
+                        <div class="name-reasoning"></div>
+                    </div>
+                </div>
+                <div class="deck-focus-options">
+                    <h3>Choose Your Deck Building Focus</h3>
+                    <div class="focus-options">
+                        <button class="focus-option" data-focus="creatures">Creatures & Combat</button>
+                        <button class="focus-option" data-focus="abilities">Key Abilities</button>
+                        <button class="focus-option" data-focus="synergy">Card Synergy</button>
+                        <button class="focus-option" data-focus="custom">Custom Strategy</button>
+                    </div>
+                    <div class="custom-strategy-input" style="display: none;">
+                        <textarea id="custom-strategy" placeholder="Describe your specific strategy or focus..."></textarea>
+                    </div>
+                </div>
+                <div class="analysis-actions">
+                    <button id="proceed-to-deck" class="primary-button">Proceed to Deck Building</button>
+                    <button id="adjust-parameters" class="secondary-button">Adjust Parameters</button>
+                </div>
+            </div>
+        </div>
+    </main>
+    <footer>
+        <p>&copy; 2024 MTG AI Builder</p>
+    </footer>
+    <script src="script.js"></script>
+</body>
+</html> 
