@@ -31,14 +31,45 @@ app.get('/api/test', (req, res) => {
     res.json({ message: 'Server is running!' });
 });
 
+// Helper function to get OpenAI headers
+function getOpenAIHeaders() {
+    const headers = {
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Content-Type': 'application/json'
+    };
+    
+    if (process.env.OPENAI_ORGANIZATION_ID) {
+        headers['OpenAI-Organization'] = process.env.OPENAI_ORGANIZATION_ID;
+    }
+    
+    return headers;
+}
+
 // OpenAI API endpoints
 app.post('/api/generate-search-parameters', async (req, res) => {
     console.log('Received request to /api/generate-search-parameters');
     console.log('Request body:', req.body);
+    
     try {
         const { systemPrompt, userContent, tools, toolChoice, maxTokens, temperature } = req.body;
         
-        console.log('OpenAI API Key present:', !!process.env.OPENAI_API_KEY);
+        // Validate required fields
+        if (!systemPrompt || !userContent) {
+            console.error('Missing required fields:', { systemPrompt: !!systemPrompt, userContent: !!userContent });
+            return res.status(400).json({ error: 'Missing required fields' });
+        }
+
+        // Check OpenAI API key and organization ID
+        if (!process.env.OPENAI_API_KEY) {
+            console.error('OpenAI API key is not set in environment variables');
+            return res.status(500).json({ error: 'OpenAI API key not configured on server' });
+        }
+
+        if (!process.env.OPENAI_ORGANIZATION_ID) {
+            console.error('OpenAI Organization ID is not set in environment variables');
+            return res.status(500).json({ error: 'OpenAI Organization ID not configured on server' });
+        }
+
         console.log('Making request to OpenAI with params:', {
             systemPrompt: systemPrompt?.substring(0, 50) + '...',
             userContent: userContent?.substring(0, 50) + '...',
@@ -57,18 +88,26 @@ app.post('/api/generate-search-parameters', async (req, res) => {
             max_tokens: maxTokens || 500,
             temperature: temperature || 0.2
         }, {
-            headers: {
-                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-                'Content-Type': 'application/json'
-            }
+            headers: getOpenAIHeaders()
         });
+
+        console.log('OpenAI response status:', response.status);
+        console.log('OpenAI response has choices:', !!response.data?.choices);
 
         res.json(response.data);
     } catch (error) {
-        console.error('Error in generate-search-parameters:', error.response?.data || error.message);
+        console.error('Detailed error in generate-search-parameters:', {
+            message: error.message,
+            response: error.response?.data,
+            stack: error.stack
+        });
+
+        // Send a more detailed error response
         res.status(500).json({
             error: 'Error calling OpenAI API',
-            details: error.response?.data || error.message
+            details: error.response?.data || error.message,
+            type: error.name,
+            path: '/api/generate-search-parameters'
         });
     }
 });
@@ -85,10 +124,7 @@ app.post('/api/generate-themed-deck', async (req, res) => {
             max_tokens: 1500,
             temperature: 0.7
         }, {
-            headers: {
-                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-                'Content-Type': 'application/json'
-            }
+            headers: getOpenAIHeaders()
         });
 
         res.json(response.data);
@@ -114,10 +150,7 @@ app.post('/api/analyze-commander', async (req, res) => {
             max_tokens: 1000,
             temperature: 0.7
         }, {
-            headers: {
-                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-                'Content-Type': 'application/json'
-            }
+            headers: getOpenAIHeaders()
         });
 
         res.json(response.data);
@@ -143,10 +176,7 @@ app.post('/api/generate-name-suggestions', async (req, res) => {
             max_tokens: 500,
             temperature: 0.8
         }, {
-            headers: {
-                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-                'Content-Type': 'application/json'
-            }
+            headers: getOpenAIHeaders()
         });
 
         res.json(response.data);

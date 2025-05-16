@@ -10,19 +10,28 @@ async function build() {
         // Create build directory
         await fs.ensureDir(BUILD_DIR);
 
-        // Create config file with API key
+        // Create config file with API key and organization ID
         const apiKey = process.env.OPENAI_API_KEY;
+        const orgId = process.env.OPENAI_ORGANIZATION_ID;
+        
         if (!apiKey) {
             console.error('WARNING: OPENAI_API_KEY environment variable is not set!');
         }
+        if (!orgId) {
+            console.error('WARNING: OPENAI_ORGANIZATION_ID environment variable is not set!');
+        }
 
         const configContent = `window.CONFIG = {
-    OPENAI_API_KEY: "${apiKey || ''}"
+    OPENAI_API_KEY: "${apiKey || ''}",
+    OPENAI_ORGANIZATION_ID: "${orgId || ''}"
 };
-console.log("Config loaded:", window.CONFIG.OPENAI_API_KEY ? "API Key present" : "API Key missing");`;
+console.log("Config loaded:", 
+    window.CONFIG.OPENAI_API_KEY ? "API Key present" : "API Key missing",
+    window.CONFIG.OPENAI_ORGANIZATION_ID ? ", Organization ID present" : ", Organization ID missing");`;
 
         await fs.writeFile(path.join(BUILD_DIR, 'config.js'), configContent);
-        console.log('Created config.js with API key status:', apiKey ? 'present' : 'missing');
+        console.log('Created config.js with API key status:', apiKey ? 'present' : 'missing',
+            'and organization ID status:', orgId ? 'present' : 'missing');
 
         // Copy and process index.html
         const indexHtml = await fs.readFile('index.html', 'utf-8');
