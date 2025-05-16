@@ -1,6 +1,6 @@
 // JavaScript for MTG AI Deck Builder will go here
 
-const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
+const BACKEND_URL = 'https://jjdb.onrender.com';  // Your Render backend URL
 const SCRYFALL_API_BASE_URL = 'https://api.scryfall.com';
 
 // const OPENAI_API_KEY = process.env.OPENAI_API_KEY; // Removed: Not used for actual API calls from client
@@ -25,25 +25,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Update the validateApiKey function
 function validateApiKey() {
-    if (!window.CONFIG) {
-        console.error('Config object not found. Make sure config.js is loaded.');
-        alert('Configuration error: Config not loaded');
-        return false;
-    }
-
-    if (!window.CONFIG.OPENAI_API_KEY) {
-        console.error('OpenAI API key not found in configuration.');
-        alert('OpenAI API key is not configured. Please check your setup.');
-        return false;
-    }
-
-    if (window.CONFIG.OPENAI_API_KEY.trim() === '') {
-        console.error('OpenAI API key is empty.');
-        alert('OpenAI API key is not configured. Please check your setup.');
-        return false;
-    }
-
-    return true;
+    return true; // No need to validate as the key is on the backend
 }
 
 // Definition of the card search tool for the AI
@@ -640,20 +622,15 @@ Power Level: ${deckParameters.powerLevel}
 Budget Range: ${deckParameters.budgetRange}
 Additional Preferences: ${deckParameters.additionalPreferences}`;
 
-        const response = await fetch(OPENAI_API_URL, {
+        const response = await fetch(BACKEND_URL + '/api/analyze-commander', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${window.CONFIG.OPENAI_API_KEY}`
             },
             body: JSON.stringify({
-                model: 'gpt-4',
-                messages: [
-                    { role: "system", content: systemPrompt },
-                    { role: "user", content: userPrompt }
-                ],
-                max_tokens: 1000,
-                temperature: 0.7
+                systemPrompt,
+                userPrompt
             })
         });
 
@@ -690,20 +667,15 @@ Playstyle: ${deckParameters.playstyle}
 
 Provide 3 creative name suggestions that blend the commander's mechanics with the user's theme.`;
 
-        const response = await fetch(OPENAI_API_URL, {
+        const response = await fetch(BACKEND_URL + '/api/generate-name-suggestions', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${window.CONFIG.OPENAI_API_KEY}`
             },
             body: JSON.stringify({
-                model: 'gpt-4',
-                messages: [
-                    { role: "system", content: systemPrompt },
-                    { role: "user", content: userPrompt }
-                ],
-                max_tokens: 500,
-                temperature: 0.8
+                systemPrompt,
+                userPrompt
             })
         });
 
@@ -869,43 +841,37 @@ function initializeDeckBuilding() {
 }
 
 async function getAIScryfallQuery(theme, playstyle) {
-    if (!validateApiKey()) return null;
-
     const userQueryContent = `User's Preferred Theme: ${theme}\nUser's Playstyle/Deck Type: ${playstyle}`;
 
-    console.log("Sending Phase 1 prompt to OpenAI to generate search parameters...");
+    console.log("Sending Phase 1 prompt to generate search parameters...");
     console.log("System Prompt:", PHASE_1_SYSTEM_PROMPT);
     console.log("User Content:", userQueryContent);
 
     try {
-        const response = await fetch(OPENAI_API_URL, {
+        const response = await fetch(`${BACKEND_URL}/api/generate-search-parameters`, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${window.CONFIG.OPENAI_API_KEY}`
+                'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                model: 'gpt-4',
-                messages: [
-                    { role: "system", content: PHASE_1_SYSTEM_PROMPT },
-                    { role: "user", content: userQueryContent }
-                ],
+                systemPrompt: PHASE_1_SYSTEM_PROMPT,
+                userContent: userQueryContent,
                 tools: [CARD_SEARCH_TOOL_DEFINITION],
-                tool_choice: { type: "function", function: { name: "search_cards" } },
-                max_tokens: 500,
+                toolChoice: { type: "function", function: { name: "search_cards" } },
+                maxTokens: 500,
                 temperature: 0.2
             })
         });
 
         if (!response.ok) {
             const errorData = await response.json();
-            console.error('OpenAI API Error (Phase 1):', response.status, errorData);
-            alert(`Error from OpenAI API (Phase 1): ${errorData.error?.message || response.statusText}`);
+            console.error('API Error (Phase 1):', response.status, errorData);
+            alert(`Error from API (Phase 1): ${errorData.error?.message || response.statusText}`);
             return null;
         }
 
         const data = await response.json();
-        console.log('OpenAI API Success (Phase 1):', data);
+        console.log('API Success (Phase 1):', data);
 
         if (data.choices && data.choices[0].message && data.choices[0].message.tool_calls) {
             const toolCall = data.choices[0].message.tool_calls[0];
@@ -919,14 +885,14 @@ async function getAIScryfallQuery(theme, playstyle) {
                 return null;
             }
         } else {
-            console.error('No valid tool_calls structure from OpenAI:', data);
-            alert('Received an unexpected response format from OpenAI when expecting search parameters.');
+            console.error('No valid tool_calls structure from API:', data);
+            alert('Received an unexpected response format when expecting search parameters.');
             return null;
         }
 
     } catch (error) {
-        console.error('Error calling OpenAI API (Phase 1):', error);
-        alert(`An error occurred while trying to contact OpenAI API: ${error.message}`);
+        console.error('Error calling API (Phase 1):', error);
+        alert(`An error occurred while trying to generate search parameters: ${error.message}`);
         return null;
     }
 }
@@ -1026,53 +992,46 @@ async function fetchCardsFromScryfall(searchParams) {
 }
 
 async function getAIThemedDeck(fetchedCards, theme, playstyle) {
-    if (!validateApiKey()) return null;
-
     const cardListForPrompt = fetchedCards.map(card => `${card.name} (Type: ${card.type_line})`).join('\n');
 
     const fullPromptForPhase2 = `${PHASE_2_PRECURSOR_PROMPT}\n\nUser's Original Theme: ${theme}\nUser's Original Playstyle: ${playstyle}\n\nHere is the list of ${fetchedCards.length} non-land cards fetched from Scryfall. Please provide the themed name and reasoning for each as requested:\n${cardListForPrompt}\n\nBegin themed card list (Original Name;;Themed Name;;Reasoning):`;
 
-    console.log("Sending Phase 2 prompt to OpenAI for theming...");
+    console.log("Sending Phase 2 prompt for theming...");
 
     try {
-        const response = await fetch(OPENAI_API_URL, {
+        const response = await fetch(`${BACKEND_URL}/api/generate-themed-deck`, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${window.CONFIG.OPENAI_API_KEY}`
+                'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                model: 'gpt-4',
-                messages: [
-                    { role: "user", content: fullPromptForPhase2 }
-                ],
-                max_tokens: 1500,
-                temperature: 0.7
+                fullPromptForPhase2,
+                cardListForPrompt
             })
         });
 
         if (!response.ok) {
             const errorData = await response.json();
-            console.error('OpenAI API Error (Phase 2 Theming):', response.status, errorData);
-            alert(`Error from OpenAI API (Phase 2 Theming): ${errorData.error?.message || response.statusText}`);
+            console.error('API Error (Phase 2 Theming):', response.status, errorData);
+            alert(`Error from API (Phase 2 Theming): ${errorData.error?.message || response.statusText}`);
             return null;
         }
 
         const data = await response.json();
-        console.log('OpenAI API Success (Phase 2 Theming):', data);
+        console.log('API Success (Phase 2 Theming):', data);
 
         if (data.choices && data.choices.length > 0 && data.choices[0].message && data.choices[0].message.content) {
             const themedCardDataText = data.choices[0].message.content.trim();
             return themedCardDataText;
         } else {
-            console.error('No valid response structure from OpenAI (Phase 2 Theming):', data);
-            alert('Received an unexpected response format from OpenAI during theming.');
+            console.error('No valid response structure from API (Phase 2 Theming):', data);
+            alert('Received an unexpected response format during theming.');
             return null;
         }
 
     } catch (error) {
-        console.error('Error calling OpenAI API (Phase 2 Theming):', error);
-        alert(`An error occurred while trying to contact OpenAI API for theming: ${error.message}`);
+        console.error('Error calling API (Phase 2 Theming):', error);
+        alert(`An error occurred while trying to theme the deck: ${error.message}`);
         return null;
     }
 }
