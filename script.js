@@ -581,10 +581,8 @@ async function showCommanderAnalysis(commander) {
     }
 }
 
-// Update getCommanderAnalysis to call OpenAI directly
+// Update getCommanderAnalysis to call OpenAI through backend
 async function getCommanderAnalysis(commander) {
-    if (!validateApiKey()) return null;
-    
     console.log('Getting commander analysis for:', commander.name);
     const analysisDiv = document.getElementById('commander-analysis');
     if (!analysisDiv) return;
@@ -607,11 +605,11 @@ Power Level: ${deckParameters.powerLevel}
 Budget Range: ${deckParameters.budgetRange}
 Additional Preferences: ${deckParameters.additionalPreferences}`;
 
+        console.log('Getting commander analysis for:', commander.name);
         const response = await fetch(BACKEND_URL + '/api/analyze-commander', {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${window.CONFIG.OPENAI_API_KEY}`
+                'Content-Type': 'application/json'
             },
             body: JSON.stringify({
                 systemPrompt,
@@ -634,10 +632,8 @@ Additional Preferences: ${deckParameters.additionalPreferences}`;
     }
 }
 
-// Update generateCustomNameReasoning to call OpenAI directly
+// Update generateCustomNameReasoning to call OpenAI through backend
 async function generateCustomNameReasoning(commander) {
-    if (!validateApiKey()) return;
-
     const nameReasoning = document.querySelector('.name-reasoning');
     nameReasoning.innerHTML = '<div class="loading">Generating name suggestions...</div>';
     
@@ -652,11 +648,11 @@ Playstyle: ${deckParameters.playstyle}
 
 Provide 3 creative name suggestions that blend the commander's mechanics with the user's theme.`;
 
+        console.log('Generating custom name suggestions for:', commander.name);
         const response = await fetch(BACKEND_URL + '/api/generate-name-suggestions', {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${window.CONFIG.OPENAI_API_KEY}`
+                'Content-Type': 'application/json'
             },
             body: JSON.stringify({
                 systemPrompt,
