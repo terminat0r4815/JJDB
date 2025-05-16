@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: mtg-ai-builder
+    env: node
+    buildCommand: npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: OPENAI_API_KEY
+        sync: false # This means it will be set manually in the Render dashboard 
