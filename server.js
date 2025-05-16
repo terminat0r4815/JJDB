@@ -20,11 +20,26 @@ app.use((req, res, next) => {
     next();
 });
 
+// Test endpoint
+app.get('/api/test', (req, res) => {
+    res.json({ message: 'Server is running!' });
+});
+
 // OpenAI API endpoints
 app.post('/api/generate-search-parameters', async (req, res) => {
+    console.log('Received request to /api/generate-search-parameters');
+    console.log('Request body:', req.body);
     try {
         const { systemPrompt, userContent, tools, toolChoice, maxTokens, temperature } = req.body;
         
+        console.log('OpenAI API Key present:', !!process.env.OPENAI_API_KEY);
+        console.log('Making request to OpenAI with params:', {
+            systemPrompt: systemPrompt?.substring(0, 50) + '...',
+            userContent: userContent?.substring(0, 50) + '...',
+            hasTools: !!tools,
+            hasToolChoice: !!toolChoice
+        });
+
         const response = await axios.post('https://api.openai.com/v1/chat/completions', {
             model: 'gpt-4',
             messages: [
