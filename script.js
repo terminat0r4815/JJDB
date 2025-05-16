@@ -1,11 +1,20 @@
 // JavaScript for MTG AI Deck Builder will go here
 
-// IMPORTANT: REPLACE 'YOUR_OPENAI_API_KEY' WITH YOUR ACTUAL KEY
-// THIS IS INSECURE FOR PRODUCTION. For local development only.
-// const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-// const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
-
+const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
 const SCRYFALL_API_BASE_URL = 'https://api.scryfall.com';
+
+// const OPENAI_API_KEY = process.env.OPENAI_API_KEY; // Removed: Not used for actual API calls from client
+// const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions'; // Removed: Not used for actual API calls from client
+
+// Add API key validation
+function validateApiKey() {
+    if (!window.CONFIG || !window.CONFIG.OPENAI_API_KEY) {
+        console.error('OpenAI API key is not set in CONFIG');
+        alert('OpenAI API key is not configured. Please check your setup.');
+        return false;
+    }
+    return true;
+}
 
 // Definition of the card search tool for the AI
 const CARD_SEARCH_TOOL_DEFINITION = {
@@ -575,37 +584,55 @@ async function showCommanderAnalysis(commander) {
     }
 }
 
-// Update getCommanderAnalysis to call backend
+// Update getCommanderAnalysis to call OpenAI directly
 async function getCommanderAnalysis(commander) {
+    if (!validateApiKey()) return null;
+    
     console.log('Getting commander analysis for:', commander.name);
     const analysisDiv = document.getElementById('commander-analysis');
     if (!analysisDiv) return;
     
     try {
-        console.log('Sending request to backend API');
-        const response = await fetch('https://jjdb.onrender.com/api/analyze-commander', {
+        const systemPrompt = `You are an expert Magic: The Gathering Commander deck analyst. Analyze the provided commander card and provide insights about its strengths, weaknesses, and potential deck building strategies.`;
+        
+        const userPrompt = `Analyze this commander:
+Name: ${commander.name}
+Type: ${commander.type_line}
+Oracle Text: ${commander.oracle_text}
+Mana Cost: ${commander.mana_cost}
+Color Identity: ${commander.color_identity.join(', ')}
+
+Consider the following parameters:
+Theme: ${deckParameters.theme}
+Playstyle: ${deckParameters.playstyle}
+Customization: ${deckParameters.customization}
+Power Level: ${deckParameters.powerLevel}
+Budget Range: ${deckParameters.budgetRange}
+Additional Preferences: ${deckParameters.additionalPreferences}`;
+
+        const response = await fetch(OPENAI_API_URL, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${window.CONFIG.OPENAI_API_KEY}`
             },
             body: JSON.stringify({
-                commander,
-                theme: deckParameters.theme,
-                playstyle: deckParameters.playstyle,
-                customization: deckParameters.customization,
-                powerLevel: deckParameters.powerLevel,
-                budgetRange: deckParameters.budgetRange,
-                additionalPreferences: deckParameters.additionalPreferences
+                model: 'gpt-4',
+                messages: [
+                    { role: "system", content: systemPrompt },
+                    { role: "user", content: userPrompt }
+                ],
+                max_tokens: 1000,
+                temperature: 0.7
             })
         });
 
         if (!response.ok) {
-            console.error('Backend API error:', response.status);
             throw new Error('Failed to analyze commander');
         }
 
         const data = await response.json();
-        const analysis = data.analysis || data.result || data.choices?.[0]?.message?.content || 'No analysis returned.';
+        const analysis = data.choices[0].message.content;
         analysisDiv.innerHTML = analysis.replace(/\n/g, '<br>');
         return analysis;
     } catch (error) {
@@ -615,21 +642,38 @@ async function getCommanderAnalysis(commander) {
     }
 }
 
-// Update the generateCustomNameReasoning function to call backend
+// Update generateCustomNameReasoning to call OpenAI directly
 async function generateCustomNameReasoning(commander) {
+    if (!validateApiKey()) return;
+
     const nameReasoning = document.querySelector('.name-reasoning');
     nameReasoning.innerHTML = '<div class="loading">Generating name suggestions...</div>';
     
     try {
-        const response = await fetch('https://jjdb.onrender.com/api/custom-name-reasoning', {
+        const systemPrompt = `You are a creative Magic: The Gathering card designer. Generate thematic name suggestions for the provided commander card based on the user's theme and playstyle.`;
+        
+        const userPrompt = `Generate thematic name suggestions for this commander:
+Name: ${commander.name}
+Type: ${commander.type_line}
+Theme: ${deckParameters.theme}
+Playstyle: ${deckParameters.playstyle}
+
+Provide 3 creative name suggestions that blend the commander's mechanics with the user's theme.`;
+
+        const response = await fetch(OPENAI_API_URL, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${window.CONFIG.OPENAI_API_KEY}`
             },
             body: JSON.stringify({
-                commander,
-                theme: deckParameters.theme,
-                playstyle: deckParameters.playstyle
+                model: 'gpt-4',
+                messages: [
+                    { role: "system", content: systemPrompt },
+                    { role: "user", content: userPrompt }
+                ],
+                max_tokens: 500,
+                temperature: 0.8
             })
         });
 
@@ -638,7 +682,7 @@ async function generateCustomNameReasoning(commander) {
         }
 
         const data = await response.json();
-        const reasoning = data.reasoning || data.result || data.choices?.[0]?.message?.content || 'No suggestions returned.';
+        const reasoning = data.choices[0].message.content;
         nameReasoning.innerHTML = reasoning;
         
     } catch (error) {
@@ -795,11 +839,7 @@ function initializeDeckBuilding() {
 }
 
 async function getAIScryfallQuery(theme, playstyle) {
-    if (OPENAI_API_KEY === 'YOUR_OPENAI_API_KEY') {
-        alert("Please replace 'YOUR_OPENAI_API_KEY' in script.js with your actual OpenAI API key.");
-        console.error("OpenAI API Key not set.");
-        return null;
-    }
+    if (!validateApiKey()) return null;
 
     const userQueryContent = `User's Preferred Theme: ${theme}\nUser's Playstyle/Deck Type: ${playstyle}`;
 
@@ -808,17 +848,21 @@ async function getAIScryfallQuery(theme, playstyle) {
     console.log("User Content:", userQueryContent);
 
     try {
-        const response = await fetch('https://jjdb.onrender.com/api/generate-search-parameters', {
+        const response = await fetch(OPENAI_API_URL, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${window.CONFIG.OPENAI_API_KEY}`
             },
             body: JSON.stringify({
-                systemPrompt: PHASE_1_SYSTEM_PROMPT,
-                userContent: userQueryContent,
+                model: 'gpt-4',
+                messages: [
+                    { role: "system", content: PHASE_1_SYSTEM_PROMPT },
+                    { role: "user", content: userQueryContent }
+                ],
                 tools: [CARD_SEARCH_TOOL_DEFINITION],
-                toolChoice: { type: "function", function: { name: "search_cards" } },
-                maxTokens: 500,
+                tool_choice: { type: "function", function: { name: "search_cards" } },
+                max_tokens: 500,
                 temperature: 0.2
             })
         });
@@ -952,29 +996,28 @@ async function fetchCardsFromScryfall(searchParams) {
 }
 
 async function getAIThemedDeck(fetchedCards, theme, playstyle) {
-    if (OPENAI_API_KEY === 'YOUR_OPENAI_API_KEY') {
-        alert("OpenAI API Key is still set to placeholder in getAIThemedDeck. Please ensure it's your actual key.");
-        console.error("OpenAI API Key not set for Phase 2.");
-        return null;
-    }
+    if (!validateApiKey()) return null;
 
-    // Prepare the list of fetched card names and types for the prompt
     const cardListForPrompt = fetchedCards.map(card => `${card.name} (Type: ${card.type_line})`).join('\n');
 
     const fullPromptForPhase2 = `${PHASE_2_PRECURSOR_PROMPT}\n\nUser's Original Theme: ${theme}\nUser's Original Playstyle: ${playstyle}\n\nHere is the list of ${fetchedCards.length} non-land cards fetched from Scryfall. Please provide the themed name and reasoning for each as requested:\n${cardListForPrompt}\n\nBegin themed card list (Original Name;;Themed Name;;Reasoning):`;
 
     console.log("Sending Phase 2 prompt to OpenAI for theming...");
-    // console.log("Full Phase 2 Prompt:", fullPromptForPhase2); // Uncomment for debugging the full prompt
 
     try {
-        const response = await fetch('https://jjdb.onrender.com/api/generate-themed-deck', {
+        const response = await fetch(OPENAI_API_URL, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${window.CONFIG.OPENAI_API_KEY}`
             },
             body: JSON.stringify({
-                fullPromptForPhase2,
-                cardListForPrompt
+                model: 'gpt-4',
+                messages: [
+                    { role: "user", content: fullPromptForPhase2 }
+                ],
+                max_tokens: 1500,
+                temperature: 0.7
             })
         });
 
