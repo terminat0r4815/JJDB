@@ -6,26 +6,11 @@ const SCRYFALL_API_BASE_URL = 'https://api.scryfall.com';
 // const OPENAI_API_KEY = process.env.OPENAI_API_KEY; // Removed: Not used for actual API calls from client
 // const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions'; // Removed: Not used for actual API calls from client
 
-// Validate API key on load
-document.addEventListener('DOMContentLoaded', function() {
-    if (!window.CONFIG) {
-        console.error('Config object not found. Make sure config.js is loaded.');
-        alert('Configuration error: Config not loaded');
-        return;
-    }
-    
-    if (!window.CONFIG.OPENAI_API_KEY) {
-        console.error('OpenAI API key not found in configuration.');
-        alert('OpenAI API key is not configured. Please check your setup.');
-        return;
-    }
+// Initialize on page load
 
-    console.log('API key validation:', window.CONFIG.OPENAI_API_KEY ? 'present' : 'missing');
-});
-
-// Update the validateApiKey function
+// Simple validation function - API key is handled by backend
 function validateApiKey() {
-    return true; // No need to validate as the key is on the backend
+    return true;
 }
 
 // Definition of the card search tool for the AI
