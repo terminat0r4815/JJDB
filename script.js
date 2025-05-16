@@ -447,6 +447,10 @@ function selectCommander(card) {
         nextStepButton.innerHTML = '<div class="loading-spinner"></div> Analyzing...';
         nextStepButton.classList.add('loading');
         
+        // Ensure deck parameters are set
+        deckParameters.theme = document.getElementById('preferred-theme').value;
+        deckParameters.playstyle = document.getElementById('playstyle').value;
+        
         // Start the analysis immediately
         showCommanderAnalysis(card);
     }
@@ -882,7 +886,7 @@ async function searchCardsInDatabase(searchParams) {
     console.log("Searching cards in database with params:", searchParams);
     
     try {
-        const response = await fetch('/api/cards/search', {
+        const response = await fetch(`${BACKEND_URL}/api/cards/search`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
