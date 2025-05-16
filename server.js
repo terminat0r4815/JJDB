@@ -1,9 +1,10 @@
 const express = require('express');
 const path = require('path');
 const CardEmbeddingService = require('./cardEmbeddings');
+const axios = require('axios');
 
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
 
 // Initialize the card embedding service
 const cardService = new CardEmbeddingService();
@@ -17,6 +18,124 @@ app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
     next();
+});
+
+// OpenAI API endpoints
+app.post('/api/generate-search-parameters', async (req, res) => {
+    try {
+        const { systemPrompt, userContent, tools, toolChoice, maxTokens, temperature } = req.body;
+        
+        const response = await axios.post('https://api.openai.com/v1/chat/completions', {
+            model: 'gpt-4',
+            messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userContent }
+            ],
+            tools: tools,
+            tool_choice: toolChoice,
+            max_tokens: maxTokens || 500,
+            temperature: temperature || 0.2
+        }, {
+            headers: {
+                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        res.json(response.data);
+    } catch (error) {
+        console.error('Error in generate-search-parameters:', error.response?.data || error.message);
+        res.status(500).json({
+            error: 'Error calling OpenAI API',
+            details: error.response?.data || error.message
+        });
+    }
+});
+
+app.post('/api/generate-themed-deck', async (req, res) => {
+    try {
+        const { fullPromptForPhase2 } = req.body;
+        
+        const response = await axios.post('https://api.openai.com/v1/chat/completions', {
+            model: 'gpt-4',
+            messages: [
+                { role: "user", content: fullPromptForPhase2 }
+            ],
+            max_tokens: 1500,
+            temperature: 0.7
+        }, {
+            headers: {
+                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        res.json(response.data);
+    } catch (error) {
+        console.error('Error in generate-themed-deck:', error.response?.data || error.message);
+        res.status(500).json({
+            error: 'Error calling OpenAI API',
+            details: error.response?.data || error.message
+        });
+    }
+});
+
+app.post('/api/analyze-commander', async (req, res) => {
+    try {
+        const { systemPrompt, userPrompt } = req.body;
+        
+        const response = await axios.post('https://api.openai.com/v1/chat/completions', {
+            model: 'gpt-4',
+            messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userPrompt }
+            ],
+            max_tokens: 1000,
+            temperature: 0.7
+        }, {
+            headers: {
+                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        res.json(response.data);
+    } catch (error) {
+        console.error('Error in analyze-commander:', error.response?.data || error.message);
+        res.status(500).json({
+            error: 'Error calling OpenAI API',
+            details: error.response?.data || error.message
+        });
+    }
+});
+
+app.post('/api/generate-name-suggestions', async (req, res) => {
+    try {
+        const { systemPrompt, userPrompt } = req.body;
+        
+        const response = await axios.post('https://api.openai.com/v1/chat/completions', {
+            model: 'gpt-4',
+            messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userPrompt }
+            ],
+            max_tokens: 500,
+            temperature: 0.8
+        }, {
+            headers: {
+                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        res.json(response.data);
+    } catch (error) {
+        console.error('Error in generate-name-suggestions:', error.response?.data || error.message);
+        res.status(500).json({
+            error: 'Error calling OpenAI API',
+            details: error.response?.data || error.message
+        });
+    }
 });
 
 // Error handling middleware
@@ -44,14 +163,6 @@ app.use((err, req, res, next) => {
             server.close(() => {
                 console.log('Server stopped');
                 process.exit(0);
-            });
-        });
-
-        // Handle uncaught exceptions
-        process.on('uncaughtException', (err) => {
-            console.error('Uncaught Exception:', err);
-            server.close(() => {
-                process.exit(1);
             });
         });
 
