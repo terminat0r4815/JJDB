@@ -6,13 +6,43 @@ const SCRYFALL_API_BASE_URL = 'https://api.scryfall.com';
 // const OPENAI_API_KEY = process.env.OPENAI_API_KEY; // Removed: Not used for actual API calls from client
 // const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions'; // Removed: Not used for actual API calls from client
 
-// Add API key validation
+// Validate API key on load
+document.addEventListener('DOMContentLoaded', function() {
+    if (!window.CONFIG) {
+        console.error('Config object not found. Make sure config.js is loaded.');
+        alert('Configuration error: Config not loaded');
+        return;
+    }
+    
+    if (!window.CONFIG.OPENAI_API_KEY) {
+        console.error('OpenAI API key not found in configuration.');
+        alert('OpenAI API key is not configured. Please check your setup.');
+        return;
+    }
+
+    console.log('API key validation:', window.CONFIG.OPENAI_API_KEY ? 'present' : 'missing');
+});
+
+// Update the validateApiKey function
 function validateApiKey() {
-    if (!window.CONFIG || !window.CONFIG.OPENAI_API_KEY) {
-        console.error('OpenAI API key is not set in CONFIG');
+    if (!window.CONFIG) {
+        console.error('Config object not found. Make sure config.js is loaded.');
+        alert('Configuration error: Config not loaded');
+        return false;
+    }
+
+    if (!window.CONFIG.OPENAI_API_KEY) {
+        console.error('OpenAI API key not found in configuration.');
         alert('OpenAI API key is not configured. Please check your setup.');
         return false;
     }
+
+    if (window.CONFIG.OPENAI_API_KEY.trim() === '') {
+        console.error('OpenAI API key is empty.');
+        alert('OpenAI API key is not configured. Please check your setup.');
+        return false;
+    }
+
     return true;
 }
 

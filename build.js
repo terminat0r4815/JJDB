@@ -11,10 +11,18 @@ async function build() {
         await fs.ensureDir(BUILD_DIR);
 
         // Create config file with API key
+        const apiKey = process.env.OPENAI_API_KEY;
+        if (!apiKey) {
+            console.error('WARNING: OPENAI_API_KEY environment variable is not set!');
+        }
+
         const configContent = `window.CONFIG = {
-    OPENAI_API_KEY: "${process.env.OPENAI_API_KEY || ''}"
-};`;
+    OPENAI_API_KEY: "${apiKey || ''}"
+};
+console.log("Config loaded:", window.CONFIG.OPENAI_API_KEY ? "API Key present" : "API Key missing");`;
+
         await fs.writeFile(path.join(BUILD_DIR, 'config.js'), configContent);
+        console.log('Created config.js with API key status:', apiKey ? 'present' : 'missing');
 
         // Copy and process index.html
         const indexHtml = await fs.readFile('index.html', 'utf-8');
@@ -23,16 +31,21 @@ async function build() {
             '    <script src="config.js"></script>\n</head>'
         );
         await fs.writeFile(path.join(BUILD_DIR, 'index.html'), processedHtml);
+        console.log('Processed index.html');
 
         // Copy other necessary files
-        await fs.copy('style.css', path.join(BUILD_DIR, 'style.css'));
-        await fs.copy('script.js', path.join(BUILD_DIR, 'script.js'));
-        await fs.copy('cardEmbeddings.js', path.join(BUILD_DIR, 'cardEmbeddings.js'));
-        await fs.copy('server.js', path.join(BUILD_DIR, 'server.js'));
+        const filesToCopy = ['style.css', 'script.js', 'cardEmbeddings.js', 'server.js'];
+        for (const file of filesToCopy) {
+            if (await fs.pathExists(file)) {
+                await fs.copy(file, path.join(BUILD_DIR, file));
+                console.log(`Copied ${file}`);
+            }
+        }
         
         // Copy card_data directory if it exists
         if (await fs.pathExists('card_data')) {
             await fs.copy('card_data', path.join(BUILD_DIR, 'card_data'));
+            console.log('Copied card_data directory');
         }
 
         console.log('Build completed successfully!');
