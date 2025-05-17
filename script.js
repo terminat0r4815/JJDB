@@ -440,21 +440,16 @@ function selectCommander(card) {
         selectedCard.classList.add('selected-commander');
     }
     
-    // Update Next Step button to loading state
+    // Enable the Next Step button
     const nextStepButton = document.getElementById('next-step-commander');
     if (nextStepButton) {
-        console.log('Updating button to loading state');
-        nextStepButton.disabled = true;
-        nextStepButton.innerHTML = '<div class="loading-spinner"></div> Analyzing...';
-        nextStepButton.classList.add('loading');
-        
-        // Ensure deck parameters are set
-        deckParameters.theme = document.getElementById('preferred-theme').value;
-        deckParameters.playstyle = document.getElementById('playstyle').value;
-        
-        // Start the analysis immediately
-        showCommanderAnalysis(card);
+        nextStepButton.disabled = false;
+        nextStepButton.textContent = 'Analyze Commander';
+        nextStepButton.classList.add('active');
     }
+
+    // Store the selected commander for later use
+    deckParameters.commander = card;
 }
 
 // Add this new function before showCommanderAnalysis
