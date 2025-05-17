@@ -304,6 +304,7 @@ async function generateDeckWithGPT() {
         // Prepare the prompt for GPT
         const prompt = `Generate a Commander deck based on the following parameters:
 Commander: ${deckParameters.commander.name}
+Deck Concept: ${deckParameters.deckConcept}
 Customization Level: ${deckParameters.customization}
 Power Level: ${deckParameters.powerLevel}
 Budget Range: ${deckParameters.budgetRange}
@@ -803,7 +804,11 @@ function initializeDeckBuilding() {
 }
 
 async function getAIScryfallQuery(deckConcept) {
-    const userQueryContent = `User's Preferred Theme: ${deckParameters.theme}\nUser's Playstyle/Deck Type: ${deckParameters.playstyle}`;
+    console.log("Getting AI search parameters for deck concept:", deckConcept);
+    
+    const userQueryContent = `User's Deck Concept: ${deckConcept}
+
+Please analyze this deck concept and find commanders that match the theme and creature types described.`;
 
     console.log("Sending Phase 1 prompt to generate search parameters...");
     console.log("System Prompt:", PHASE_1_SYSTEM_PROMPT);
@@ -953,12 +958,12 @@ async function fetchCardsFromScryfall(searchParams) {
     }
 }
 
-async function getAIThemedDeck(fetchedCards, theme, playstyle) {
+async function getCustomizedDeck(fetchedCards, deckConcept) {
     const cardListForPrompt = fetchedCards.map(card => `${card.name} (Type: ${card.type_line})`).join('\n');
 
-    const fullPromptForPhase2 = `${PHASE_2_PRECURSOR_PROMPT}\n\nUser's Original Theme: ${theme}\nUser's Original Playstyle: ${playstyle}\n\nHere is the list of ${fetchedCards.length} non-land cards fetched from Scryfall. Please provide the themed name and reasoning for each as requested:\n${cardListForPrompt}\n\nBegin themed card list (Original Name;;Themed Name;;Reasoning):`;
+    const fullPromptForPhase2 = `${PHASE_2_PRECURSOR_PROMPT}\n\nUser's Deck Concept: ${deckConcept}\n\nHere is the list of ${fetchedCards.length} non-land cards fetched from Scryfall. Please provide customized names and reasoning for each as requested:\n${cardListForPrompt}\n\nBegin card list (Original Name;;Custom Name;;Reasoning):`;
 
-    console.log("Sending Phase 2 prompt for theming...");
+    console.log("Sending Phase 2 prompt for customization...");
 
     try {
         const response = await fetch(`${BACKEND_URL}/api/generate-themed-deck`, {
@@ -974,71 +979,53 @@ async function getAIThemedDeck(fetchedCards, theme, playstyle) {
 
         if (!response.ok) {
             const errorData = await response.json();
-            console.error('API Error (Phase 2 Theming):', response.status, errorData);
-            alert(`Error from API (Phase 2 Theming): ${errorData.error?.message || response.statusText}`);
+            console.error('API Error (Phase 2):', response.status, errorData);
+            alert(`Error from API (Phase 2): ${errorData.error?.message || response.statusText}`);
             return null;
         }
 
         const data = await response.json();
-        console.log('API Success (Phase 2 Theming):', data);
+        console.log('API Success (Phase 2):', data);
 
         if (data.choices && data.choices.length > 0 && data.choices[0].message && data.choices[0].message.content) {
-            const themedCardDataText = data.choices[0].message.content.trim();
-            return themedCardDataText;
+            const customizedDeckText = data.choices[0].message.content.trim();
+            return customizedDeckText;
         } else {
-            console.error('No valid response structure from API (Phase 2 Theming):', data);
-            alert('Received an unexpected response format during theming.');
+            console.error('No valid response structure from API (Phase 2):', data);
+            alert('Received an unexpected response format during customization.');
             return null;
         }
 
     } catch (error) {
-        console.error('Error calling API (Phase 2 Theming):', error);
-        alert(`An error occurred while trying to theme the deck: ${error.message}`);
+        console.error('Error calling API (Phase 2):', error);
+        alert(`An error occurred while trying to customize the deck: ${error.message}`);
         return null;
     }
 }
 
-function parseThemedData(themedDeckDataString) {
-    if (!themedDeckDataString || typeof themedDeckDataString !== 'string') {
-        console.error("Invalid themedDeckDataString for parsing.");
+function parseCustomizedData(customizedDeckString) {
+    if (!customizedDeckString || typeof customizedDeckString !== 'string') {
+        console.error("Invalid customized deck string for parsing.");
         return [];
     }
-    const lines = themedDeckDataString.trim().split('\n');
+    const lines = customizedDeckString.trim().split('\n');
     const parsedCards = lines.map((line, index) => {
         const parts = line.split(';;');
         if (parts.length >= 3) {
             return {
-                id: index + 1, // Line number
+                id: index + 1,
                 originalName: parts[0].trim(),
-                themedName: parts[1].trim(),
+                customName: parts[1].trim(),
                 reasoning: parts[2].trim(),
-                isCommander: index === 0, // Assume first card is commander for now
-                isLand: false // Initially all are non-lands from AI
+                isCommander: index === 0,
+                isLand: false
             };
         } else {
             console.warn(`Skipping malformed line during parsing (line ${index + 1}): ${line}`);
-            return null; // Or some error object
+            return null;
         }
-    }).filter(card => card !== null); // Remove any null entries from malformed lines
+    }).filter(card => card !== null);
     return parsedCards;
-}
-
-function addBasicLands(deckArray, numberOfLands = 33) { // Defaulting to 33 lands (approx 100 - 70 + 3)
-    const landTypes = ['Plains', 'Island', 'Swamp', 'Mountain', 'Forest'];
-    let currentId = deckArray.length > 0 ? Math.max(...deckArray.map(c => c.id)) + 1 : 1;
-    
-    // Simple distribution for now, can be made smarter based on Commander colors
-    for (let i = 0; i < numberOfLands; i++) {
-        deckArray.push({
-            id: currentId++,
-            originalName: `Basic Land - ${landTypes[i % landTypes.length]}`, // Cycle through land types
-            themedName: "N/A",
-            reasoning: "N/A",
-            isCommander: false,
-            isLand: true
-        });
-    }
-    return deckArray;
 }
 
 function displayDeckList(deckArray, targetDivId) {
@@ -1147,6 +1134,10 @@ function displayCommanderOptions(cards) {
         });
     }
     
+    if (!cards || cards.length === 0) {
+        throw new Error('No commanders found matching your deck concept. Try adjusting your description.');
+    }
+    
     cards.forEach(card => {
         console.log('Processing card:', card.name);
         const imageUrl = getCardImageUrl(card);
@@ -1202,21 +1193,22 @@ function displayCommanderOptions(cards) {
 document.addEventListener('DOMContentLoaded', () => {
     console.log('MTG AI Deck Builder script loaded.');
 
-    const deckThemeForm = document.getElementById('deck-theme-form');
+    const deckConceptForm = document.getElementById('deck-theme-form');
     const resultsSection = document.getElementById('results-section');
     const results = document.getElementById('results');
     const commanderOptions = document.getElementById('commander-options');
 
-    if (!deckThemeForm) {
-        console.error('Deck theme form not found!');
+    if (!deckConceptForm) {
+        console.error('Deck concept form not found!');
         return;
     }
 
-    deckThemeForm.addEventListener('submit', async (e) => {
+    deckConceptForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         console.log('Form submitted');
         
         const deckConcept = document.getElementById('deck-concept').value;
+        console.log('Deck concept from form:', deckConcept);
         
         // Store deck concept in deckParameters
         deckParameters.deckConcept = deckConcept;
@@ -1235,7 +1227,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            console.log('Getting AI search parameters...');
+            console.log('Getting AI search parameters for deck concept:', deckConcept);
             const searchParams = await getAIScryfallQuery(deckConcept);
             if (!searchParams) {
                 throw new Error('Failed to generate search parameters. Please try again.');
@@ -1244,7 +1236,7 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log('Fetching commander options...');
             const cards = await searchCardsInDatabase(searchParams);
             if (!cards || cards.length === 0) {
-                throw new Error('No commanders found matching the criteria. Try adjusting your deck concept.');
+                throw new Error('No commanders found matching your deck concept. Try adjusting your description.');
             }
 
             console.log('Displaying commander options...');
