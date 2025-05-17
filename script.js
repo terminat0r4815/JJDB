@@ -96,7 +96,7 @@ const CARD_SEARCH_TOOL_DEFINITION = {
 
 // System prompt for Phase 1: AI generates a card search query
 const PHASE_1_SYSTEM_PROMPT = `You are an expert Magic: The Gathering Commander (EDH) deck architect.
-Your primary task is to understand the user's desired deck theme and playstyle, and then formulate an effective search query to find a suitable commander.
+Your primary task is to understand the user's desired deck theme and find a suitable commander that can lead that theme.
 
 IMPORTANT: You MUST return a properly formatted JSON object with the following structure:
 {
@@ -112,44 +112,43 @@ IMPORTANT: You MUST return a properly formatted JSON object with the following s
 }
 
 When formulating the search query, prioritize in this order:
-1. PRIMARY: Playstyle - Focus on abilities and effects that support the desired playstyle
-2. PRIMARY: Color Identity - Use the colors specified by the user. If no colors are specified, choose colors that best enable the playstyle
-3. SECONDARY: Theme - Only incorporate theme-related terms if they naturally fit with the card's text or flavor
+1. PRIMARY: Theme - Focus on finding a commander that embodies or enables the user's theme
+2. PRIMARY: Creature Subtypes - Look for commanders that are or support specific creature types that fit the theme
+3. SECONDARY: Color Identity - Choose colors that best support the theme and creature types
 
 IMPORTANT: Your search query MUST:
 - Start with "legendary" to ensure we get legendary permanents
 - Include "creature" if you want to focus on creature commanders
 - Include any relevant permanent types (e.g., "legendary planeswalker" for planeswalker commanders)
-- Focus on abilities that support the playstyle
-- Include color identity terms only if not already specified in options
+- Include specific creature subtypes that fit the theme
+- Focus on abilities that support the theme and creature types
 
 For example, if the user wants:
 - Theme: "Steampunk Robots"
-- Playstyle: "Control"
-- Colors: "Red and Blue"
+- Creature Types: "Artificer, Construct"
 
 Your search query should focus on:
-1. Control-oriented abilities and effects
-2. Red and Blue colors (as specified by user)
-3. Only include artifact/mechanical terms if they naturally fit with control effects
+1. Artificer and Construct creature types
+2. Artifact and mechanical themes
+3. Colors that support artifact strategies (usually Blue and/or Red)
 
 Example search query for above:
 {
     "searchType": "semantic",
-    "query": "legendary permanent with control abilities",
+    "query": "legendary artificer or construct with artifact abilities",
     "options": {
         "searchComponents": ["name", "type", "abilities"],
         "minSimilarity": 0.3,
-        "colorIdentity": ["U", "R"],  // Red and Blue as specified by user
+        "colorIdentity": ["U", "R"],  // Blue and Red for artifact support
         "cardType": "Legendary",
         "limit": 20
     }
 }
 
 The search should aim to find:
-- A legendary permanent that enables the desired playstyle
-- A legendary permanent with the user's specified colors (or appropriate colors if none specified)
-- A legendary permanent that can incidentally support the theme if possible
+- A legendary permanent that embodies or enables the theme
+- A legendary permanent that supports relevant creature subtypes
+- A legendary permanent with colors that support the theme
 
 You must call the 'search_cards' function with your generated search parameters as a properly formatted JSON object. Do not provide any other text or explanation.`;
 
@@ -505,14 +504,13 @@ async function showCommanderAnalysis(commander) {
     
     try {
         console.log('Starting API calls for analysis');
-        // Create a new analysis promise
+        // Only get commander analysis (no custom name reasoning)
         currentAnalysisPromise = Promise.all([
-            getCommanderAnalysis(commander),
-            generateCustomNameReasoning(commander)
+            getCommanderAnalysis(commander)
         ]);
 
         // Wait for the analysis to complete
-        const [analysisResult, nameReasoningResult] = await currentAnalysisPromise;
+        const [analysisResult] = await currentAnalysisPromise;
         console.log('Analysis completed for:', commander.name);
         
         // Only proceed if this is still the current analysis
@@ -532,27 +530,9 @@ async function showCommanderAnalysis(commander) {
                          alt="${commander.name}" 
                          class="card-image"
                          onerror="this.onerror=null; this.src='https://c1.scryfall.com/file/scryfall-card-backs/large/59/597b79b3-7d77-4261-871a-60dd17403388.jpg?1562638020'">
+                    <div class="card-image-overlay"></div>
                 </div>
             `;
-            
-            // Display commander details
-            analysisSection.querySelector('.commander-name').textContent = commander.name;
-            analysisSection.querySelector('.commander-type').textContent = commander.type_line;
-            
-            // Format oracle text with proper line breaks and styling (no bullet points)
-            const abilitiesText = commander.oracle_text || 'No abilities';
-            const formattedAbilities = abilitiesText
-                .split('\n')
-                .map(line => line.trim())
-                .filter(line => line.length > 0)
-                .join('\n');
-            // Convert mana costs and tap/untap to symbols before displaying
-            const abilitiesWithSymbols = convertManaCostToSymbols(formattedAbilities);
-            
-            analysisSection.querySelector('.commander-abilities').innerHTML = abilitiesWithSymbols
-                .split('\n')
-                .map(line => `<div class=\"ability-line\">${line}</div>`)
-                .join('');
             
             // Initialize focus options
             initializeFocusOptions();
@@ -1161,6 +1141,11 @@ function displayCommanderOptions(cards) {
                 const cardName = selectedCard.querySelector('.card-name').textContent;
                 const selectedCommander = cards.find(card => card.name === cardName);
                 if (selectedCommander) {
+                    // Update button to loading state
+                    nextStepButton.disabled = true;
+                    nextStepButton.innerHTML = '<div class="loading-spinner"></div> Analyzing...';
+                    nextStepButton.classList.add('loading');
+                    // Start the analysis
                     showCommanderAnalysis(selectedCommander);
                 }
             }
@@ -1175,13 +1160,15 @@ function displayCommanderOptions(cards) {
         const cardElement = document.createElement('div');
         cardElement.className = 'commander-option';
         
-        // Create the card HTML structure
+        // Create the card HTML structure with overlay and flip button if needed
         cardElement.innerHTML = `
             <div class="card-image-container">
                 <img src="${imageUrl}" 
                      alt="${card.name}" 
                      class="card-image"
+                     ${card.image_uris?.isDoubleFaced ? 'data-front="' + card.image_uris.front.normal + '" data-back="' + card.image_uris.back.normal + '"' : ''}
                      onerror="this.onerror=null; console.error('Failed to load image for ${card.name}'); this.src='https://c1.scryfall.com/file/scryfall-card-backs/large/59/597b79b3-7d77-4261-871a-60dd17403388.jpg?1562638020'">
+                <div class="card-image-overlay"></div>
                 ${card.image_uris?.isDoubleFaced ? '<button class="flip-button">Flip</button>' : ''}
             </div>
             <div class="card-name">${card.name}</div>
@@ -1199,14 +1186,17 @@ function displayCommanderOptions(cards) {
         if (card.image_uris?.isDoubleFaced) {
             const flipButton = cardElement.querySelector('.flip-button');
             const img = cardElement.querySelector('.card-image');
-            
+            const frontUrl = card.image_uris.front.normal;
+            const backUrl = card.image_uris.back.normal;
+            let showingFront = true;
             flipButton.addEventListener('click', (e) => {
                 e.stopPropagation();
-                if (img.src === card.image_uris.front.normal) {
-                    img.src = card.image_uris.back.normal;
+                if (showingFront) {
+                    img.src = backUrl;
                 } else {
-                    img.src = card.image_uris.front.normal;
+                    img.src = frontUrl;
                 }
+                showingFront = !showingFront;
             });
         }
         
