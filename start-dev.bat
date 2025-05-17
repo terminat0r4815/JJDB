@@ -11,55 +11,6 @@ for /f "tokens=5" %%a in ('netstat -aon ^| find ":3000" ^| find "LISTENING"') do
     )
 )
 
-:: Check for script.js
-if not exist "script.js" (
-    echo [31mError: script.js not found in current directory[0m
-    echo Current directory: %CD%
-    echo.
-    echo Press any key to exit...
-    pause >nul
-    exit /b 1
-)
-
-:: Check for .env and create if needed
-if not exist ".env" (
-    echo Creating .env file...
-    (
-        echo OPENAI_API_KEY=your_api_key_here
-        echo OPENAI_ORGANIZATION_ID=
-        echo PORT=3000
-        echo NODE_ENV=development
-    ) > .env
-    echo Created .env file. Please edit it with your OpenAI API key.
-    notepad .env
-    exit /b 1
-)
-
-:: Create a temporary file for the URL change
-echo Creating temporary file for URL update...
-powershell -Command "(Get-Content script.js) -replace 'const BACKEND_URL = .*', 'const BACKEND_URL = ''http://localhost:3000'';  // Development URL' | Set-Content script.js.tmp"
-
-:: Check if the temporary file was created successfully
-if not exist "script.js.tmp" (
-    echo [31mError: Could not create temporary file[0m
-    echo Please make sure you have write permissions in this directory.
-    echo.
-    echo Press any key to exit...
-    pause >nul
-    exit /b 1
-)
-
-:: Replace the original file with the temporary file
-move /Y "script.js.tmp" "script.js" >nul
-if errorlevel 1 (
-    echo [31mError: Could not update script.js[0m
-    echo Please make sure you have write permissions.
-    echo.
-    echo Press any key to exit...
-    pause >nul
-    exit /b 1
-)
-
 :: Check Node.js installation
 where node >nul 2>&1
 if errorlevel 1 (
@@ -82,6 +33,20 @@ if errorlevel 1 (
     exit /b 1
 )
 
+:: Check for .env and create if needed
+if not exist ".env" (
+    echo Creating .env file...
+    (
+        echo OPENAI_API_KEY=your_api_key_here
+        echo OPENAI_ORGANIZATION_ID=
+        echo PORT=3000
+        echo NODE_ENV=development
+    ) > .env
+    echo Created .env file. Please edit it with your OpenAI API key.
+    notepad .env
+    exit /b 1
+)
+
 :: Install dependencies if needed
 if not exist "node_modules\" (
     echo Installing dependencies...
@@ -100,11 +65,8 @@ if not exist "node_modules\" (
 echo Starting development server...
 call npm run dev
 
-:: If server exits, update URL back to production
 echo.
-echo [36mUpdating to production configuration...[0m
-powershell -Command "(Get-Content script.js) -replace 'const BACKEND_URL = .*', 'const BACKEND_URL = ''https://jjdb.onrender.com'';  // Production URL' | Set-Content script.js"
-echo [32mUpdated to production mode[0m
+echo Development server stopped.
 echo.
 echo Press any key to exit...
 pause >nul 
