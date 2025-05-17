@@ -1,7 +1,7 @@
 // JavaScript for MTG AI Deck Builder will go here
 
 // For local development, use localhost. For production, use the Render URL
-const BACKEND_URL = 'https://jjdb.onrender.com';  // Production URL  // Development URL  // Development URL
+const BACKEND_URL = 'http://localhost:3000';  // Development URL  // Change this to 'https://jjdb.onrender.com' for production
 const SCRYFALL_API_BASE_URL = 'https://api.scryfall.com';
 
 // const OPENAI_API_KEY = process.env.OPENAI_API_KEY; // Removed: Not used for actual API calls from client

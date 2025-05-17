@@ -1,3 +1,6 @@
+// Load environment variables first
+require('dotenv').config();
+
 const express = require('express');
 const path = require('path');
 const CardEmbeddingService = require('./cardEmbeddings');
@@ -26,13 +29,32 @@ app.use((req, res, next) => {
     next();
 });
 
-// Test endpoint
+// Test endpoint that also validates environment
 app.get('/api/test', (req, res) => {
-    res.json({ message: 'Server is running!' });
+    // Check if required environment variables are set
+    const requiredVars = ['OPENAI_API_KEY'];
+    const missingVars = requiredVars.filter(varName => !process.env[varName]);
+    
+    if (missingVars.length > 0) {
+        return res.status(500).json({ 
+            error: 'Missing required environment variables', 
+            missing: missingVars 
+        });
+    }
+    
+    res.json({ 
+        message: 'Server is running!',
+        environment: process.env.NODE_ENV,
+        apiConfigured: true
+    });
 });
 
-// Helper function to get OpenAI headers
+// Helper function to get OpenAI headers with better error handling
 function getOpenAIHeaders() {
+    if (!process.env.OPENAI_API_KEY) {
+        throw new Error('OpenAI API key is not configured. Please set OPENAI_API_KEY environment variable.');
+    }
+
     const headers = {
         'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
         'Content-Type': 'application/json'

@@ -3,34 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MTG AI Deck Builder</title>
+    <title>JJ's Deck Builder</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <header>
-        <h1>JJ's Custom Deck Builder</h1>
+        <h1>JJ's Deck Builder</h1>
     </header>
     <main>
         <section id="prompt-section">
-            <h2>Welcome! Let's Build Your Deck</h2>
-            <p>Follow the prompts to create a uniquely themed and ready to print commander deck!</p>
-            <h3 class="form-title">Deck Preferences & Parameters</h3>
+            <p>Welcome to JJ's Deck Builder! Here you can create your dream Commander deck with custom card names and artwork. Simply describe your deck concept, choose your customization level, and we'll help you find the perfect commander and build a balanced deck around it. Whether you're looking for a casual fun deck or a competitive powerhouse, we'll guide you through the process of creating something uniquely yours.</p>
             <form id="deck-theme-form">
                 <div class="parameter-group">
                     <div class="parameter-input">
-                        <label for="preferred-theme">What is your preferred theme for the deck?</label>
-                        <input type="text" id="preferred-theme" name="preferred-theme" placeholder="e.g., Dragons, Cyberpunk, Eldritch Horror" required>
+                        <label for="deck-concept" class="parameter-label">Describe your deck concept:</label>
+                        <textarea id="deck-concept" name="deck-concept" 
+                            placeholder="Describe both the theme and gameplay style you want. For example: 'A sneaky ninja deck that uses shadow magic to control the battlefield' or 'An aggressive dragon tribal deck focused on dealing massive damage with flying creatures'" 
+                            required></textarea>
+                        <p class="input-help">Include both thematic elements (like creature types, story, or aesthetic) and gameplay elements (like strategy, mechanics, or colors you want to use).</p>
                     </div>
                 </div>
                 <div class="parameter-group">
                     <div class="parameter-input">
-                        <label for="playstyle">What playstyle or deck type are you aiming for?</label>
-                        <input type="text" id="playstyle" name="playstyle" placeholder="e.g., Aggro, Control, Combo, Tribal" required>
-                    </div>
-                </div>
-                <div class="parameter-group">
-                    <div class="parameter-input">
-                        <label for="customization-level">How would you like to customize your deck?</label>
+                        <label for="customization-level" class="parameter-label">How would you like to customize your deck?</label>
                         <select id="customization-level" class="parameter-select">
                             <option value="full">Full Custom (Custom Names + Art)</option>
                             <option value="partial">Partial Custom (Real Names + Custom Art)</option>
@@ -40,7 +35,7 @@
                 </div>
                 <div class="parameter-group">
                     <div class="parameter-input">
-                        <label for="power-level">What power level are you aiming for?</label>
+                        <label for="power-level" class="parameter-label">What power level are you aiming for?</label>
                         <select id="power-level" class="parameter-select">
                             <option value="casual">Casual (Fun-focused)</option>
                             <option value="focused">Focused (Balanced)</option>
@@ -51,7 +46,7 @@
                 </div>
                 <div class="parameter-group">
                     <div class="parameter-input">
-                        <label for="budget-range">What's your budget range?</label>
+                        <label for="budget-range" class="parameter-label">What's your budget range?</label>
                         <select id="budget-range" class="parameter-select">
                             <option value="budget">Budget ($0-50)</option>
                             <option value="moderate">Moderate ($50-200)</option>
@@ -60,14 +55,7 @@
                         </select>
                     </div>
                 </div>
-                <div class="parameter-group">
-                    <div class="parameter-input">
-                        <label for="additional-preferences">Any specific preferences or requirements?</label>
-                        <textarea id="additional-preferences" class="parameter-textarea" 
-                                  placeholder="e.g., I want to focus on token generation, or I prefer instant-speed interaction..."></textarea>
-                    </div>
-                </div>
-                <button type="submit">Generate Ideas</button>
+                <button type="submit" class="find-commander-btn">Find a Commander!</button>
             </form>
         </section>
         <section id="results-section" style="display: none;">
@@ -100,11 +88,9 @@
                         <div class="commander-abilities"></div>
                     </div>
                 </div>
-                <div class="ai-analysis">
-                    <h3>Thematic Essence</h3>
-                    <div id="commander-analysis" class="analysis-content"></div>
-                </div>
-                <div class="customization-section">
+                <div id="commander-analysis"></div>
+                <div class="name-reasoning"></div>
+                <div class="customization-section" style="display: none;">
                     <h3>Customization Options</h3>
                     <div class="custom-name-section">
                         <label for="custom-commander-name">Custom Commander Name:</label>

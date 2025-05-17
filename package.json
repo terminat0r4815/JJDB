@@ -5,6 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "dev": "node dev.js",
     "build": "npm install && node build.js",
     "postbuild": "cp -r * dist/ || true",
     "test": "echo \"Error: no test specified\" && exit 1"

@@ -845,7 +845,21 @@ class CardEmbeddingService {
         // Get all cards that match the basic filters
         let candidates = Array.from(this.cards.values());
 
-        // Apply basic filters first
+        // If this is a commander search, filter for valid commanders
+        if (isCommanderSearch) {
+            candidates = candidates.filter(card => {
+                // Must be a legendary creature or have "can be your commander" text
+                const isLegendaryCreature = card.type_line.toLowerCase().includes('legendary creature');
+                const canBeCommander = card.oracle_text?.toLowerCase().includes('can be your commander');
+                
+                // Check if it's legal in Commander format
+                const isLegalCommander = card.legalities?.commander === 'legal';
+                
+                return (isLegendaryCreature || canBeCommander) && isLegalCommander;
+            });
+        }
+
+        // Apply color identity filter if specified
         if (colorIdentity) {
             const colors = Array.isArray(colorIdentity) ? colorIdentity : [colorIdentity];
             candidates = candidates.filter(card => {
@@ -854,6 +868,7 @@ class CardEmbeddingService {
             });
         }
 
+        // Apply card type filter if specified
         if (cardType) {
             candidates = candidates.filter(card => 
                 card.type_line.toLowerCase().includes(cardType.toLowerCase())
@@ -877,6 +892,23 @@ class CardEmbeddingService {
             }
 
             const avgSimilarity = componentCount > 0 ? totalSimilarity / componentCount : 0;
+
+            // Boost score for commanders with matching abilities or themes
+            if (isCommanderSearch) {
+                // Boost for ability keywords matching the query
+                const queryWords = query.toLowerCase().split(/\s+/);
+                const abilityBoost = card.keywords.some(keyword => 
+                    queryWords.includes(keyword.toLowerCase())
+                ) ? 0.2 : 0;
+
+                // Boost for theme matching
+                const themeBoost = card.oracle_text?.toLowerCase().includes(query.toLowerCase()) ? 0.2 : 0;
+
+                return {
+                    card,
+                    similarity: avgSimilarity + abilityBoost + themeBoost
+                };
+            }
 
             return {
                 card,

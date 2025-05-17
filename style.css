@@ -32,6 +32,18 @@ main {
     color: #f4f4f4;
 }
 
+#prompt-section p {
+    font-size: 1.1em;
+    line-height: 1.6;
+    color: #e0e0e0;
+    margin-bottom: 30px;
+    max-width: 800px;
+    margin-left: auto;
+    margin-right: auto;
+    text-align: center;
+    padding: 0 20px;
+}
+
 #card-list {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(600px, 1fr));
@@ -324,9 +336,15 @@ input[type="submit"]:hover, button:hover {
 
 .parameter-group {
     margin-bottom: 25px;
-    background: #333;
+    background: #23272a;
     padding: 20px;
     border-radius: 8px;
+    transition: all 0.3s ease;
+}
+
+.parameter-group:hover {
+    background: #2c2f33;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 .parameter-group h3 {
@@ -348,35 +366,39 @@ input[type="submit"]:hover, button:hover {
     font-size: 1em;
 }
 
+.parameter-label {
+    color: #4a90e2;
+    font-size: 1.2em;
+    font-weight: 600;
+    margin-bottom: 12px;
+    display: block;
+}
+
 .parameter-select {
-    padding: 10px;
-    border-radius: 6px;
-    border: 1px solid #444;
-    background: #2a2a2a;
+    width: 100%;
+    padding: 12px;
+    border: 2px solid #444;
+    border-radius: 8px;
+    background-color: #1a1a1a;
     color: #fff;
-    font-size: 1em;
+    font-size: 1.1em;
     cursor: pointer;
-    transition: border-color 0.3s ease;
+    transition: all 0.3s ease;
 }
 
 .parameter-select:hover {
     border-color: #4a90e2;
 }
 
-.parameter-textarea {
-    padding: 12px;
-    border-radius: 6px;
-    border: 1px solid #444;
-    background: #2a2a2a;
-    color: #fff;
-    font-size: 1em;
-    min-height: 100px;
-    resize: vertical;
-    transition: border-color 0.3s ease;
+.parameter-select:focus {
+    border-color: #4a90e2;
+    outline: none;
+    box-shadow: 0 0 8px rgba(74, 144, 226, 0.3);
 }
 
-.parameter-textarea:hover {
-    border-color: #4a90e2;
+/* Remove old textarea styles */
+.parameter-textarea {
+    display: none;
 }
 
 .parameter-actions {
@@ -1048,4 +1070,72 @@ hr.blue-line {
     margin: 24px 0 24px 0;
     width: 100%;
     opacity: 0.8;
+}
+
+#deck-concept {
+    width: 100%;
+    min-height: 120px;
+    padding: 15px;
+    border: 2px solid #444;
+    border-radius: 8px;
+    background-color: #1a1a1a;
+    color: #fff;
+    font-size: 1.1em;
+    line-height: 1.6;
+    resize: vertical;
+    transition: all 0.3s ease;
+    margin-bottom: 8px;
+}
+
+#deck-concept:focus {
+    border-color: #4a90e2;
+    outline: none;
+    box-shadow: 0 0 8px rgba(74, 144, 226, 0.3);
+}
+
+.input-help {
+    margin-top: 8px;
+    font-size: 0.95em;
+    color: #888;
+    font-style: italic;
+    line-height: 1.4;
+    padding: 0 4px;
+}
+
+.find-commander-btn {
+    display: block;
+    width: 100%;
+    max-width: 300px;
+    margin: 30px auto;
+    padding: 15px 30px;
+    font-size: 1.3em;
+    font-weight: 600;
+    color: #fff;
+    background: linear-gradient(135deg, #4a90e2 0%, #357abd 100%);
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.find-commander-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
+    background: linear-gradient(135deg, #357abd 0%, #4a90e2 100%);
+}
+
+.find-commander-btn:active {
+    transform: translateY(1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.find-commander-btn:disabled {
+    background: #666;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+    opacity: 0.7;
 } 
