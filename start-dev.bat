@@ -35,11 +35,13 @@ if not exist ".env" (
     exit /b 1
 )
 
-:: Backup script.js
-echo Creating backup of script.js...
-copy "script.js" "script.js.bak" >nul
-if errorlevel 1 (
-    echo [31mError: Could not create backup of script.js[0m
+:: Create a temporary file for the URL change
+echo Creating temporary file for URL update...
+powershell -Command "(Get-Content script.js) -replace 'const BACKEND_URL = .*', 'const BACKEND_URL = ''http://localhost:3000'';  // Development URL' | Set-Content script.js.tmp"
+
+:: Check if the temporary file was created successfully
+if not exist "script.js.tmp" (
+    echo [31mError: Could not create temporary file[0m
     echo Please make sure you have write permissions in this directory.
     echo.
     echo Press any key to exit...
@@ -47,17 +49,14 @@ if errorlevel 1 (
     exit /b 1
 )
 
-:: Update BACKEND_URL in script.js
-echo Updating backend URL to development mode...
-powershell -Command "(Get-Content script.js) -replace 'const BACKEND_URL = .*', 'const BACKEND_URL = ''http://localhost:3000'';  // Development URL' | Set-Content script.js"
+:: Replace the original file with the temporary file
+move /Y "script.js.tmp" "script.js" >nul
 if errorlevel 1 (
     echo [31mError: Could not update script.js[0m
-    echo Please make sure you have write permissions and PowerShell is available.
+    echo Please make sure you have write permissions.
     echo.
     echo Press any key to exit...
     pause >nul
-    copy "script.js.bak" "script.js" >nul
-    del "script.js.bak" >nul
     exit /b 1
 )
 
@@ -101,12 +100,11 @@ if not exist "node_modules\" (
 echo Starting development server...
 call npm run dev
 
-:: If server exits, restore production URL
+:: If server exits, update URL back to production
 echo.
-echo [36mRestoring production configuration...[0m
-copy "script.js.bak" "script.js" >nul
-del "script.js.bak" >nul
-echo [32mRestored to production mode[0m
+echo [36mUpdating to production configuration...[0m
+powershell -Command "(Get-Content script.js) -replace 'const BACKEND_URL = .*', 'const BACKEND_URL = ''https://jjdb.onrender.com'';  // Production URL' | Set-Content script.js"
+echo [32mUpdated to production mode[0m
 echo.
 echo Press any key to exit...
 pause >nul 

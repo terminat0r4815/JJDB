@@ -175,7 +175,8 @@ let deckParameters = {
     budgetRange: 'moderate',
     additionalPreferences: '',
     theme: '',
-    playstyle: ''
+    playstyle: '',
+    deckConcept: ''
 };
 
 // Add a variable to track the current analysis
@@ -826,8 +827,8 @@ function initializeDeckBuilding() {
     initializeDeckParameters();
 }
 
-async function getAIScryfallQuery(theme, playstyle) {
-    const userQueryContent = `User's Preferred Theme: ${theme}\nUser's Playstyle/Deck Type: ${playstyle}`;
+async function getAIScryfallQuery(deckConcept) {
+    const userQueryContent = `User's Preferred Theme: ${deckParameters.theme}\nUser's Playstyle/Deck Type: ${deckParameters.playstyle}`;
 
     console.log("Sending Phase 1 prompt to generate search parameters...");
     console.log("System Prompt:", PHASE_1_SYSTEM_PROMPT);
@@ -1230,12 +1231,10 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         console.log('Form submitted');
         
-        const theme = document.getElementById('preferred-theme').value;
-        const playstyle = document.getElementById('playstyle').value;
+        const deckConcept = document.getElementById('deck-concept').value;
         
-        // Store theme and playstyle in deckParameters
-        deckParameters.theme = theme;
-        deckParameters.playstyle = playstyle;
+        // Store deck concept in deckParameters
+        deckParameters.deckConcept = deckConcept;
         
         console.log('Stored deck parameters:', deckParameters);
         
@@ -1252,7 +1251,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             console.log('Getting AI search parameters...');
-            const searchParams = await getAIScryfallQuery(theme, playstyle);
+            const searchParams = await getAIScryfallQuery(deckConcept);
             if (!searchParams) {
                 throw new Error('Failed to generate search parameters. Please try again.');
             }
@@ -1260,7 +1259,7 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log('Fetching commander options...');
             const cards = await searchCardsInDatabase(searchParams);
             if (!cards || cards.length === 0) {
-                throw new Error('No commanders found matching the criteria. Try adjusting your theme or playstyle.');
+                throw new Error('No commanders found matching the criteria. Try adjusting your deck concept.');
             }
 
             console.log('Displaying commander options...');
@@ -1273,7 +1272,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="error">
                         <h3>Error Finding Commanders</h3>
                         <p>${error.message}</p>
-                        <p>Please try again or adjust your theme/playstyle.</p>
+                        <p>Please try again or adjust your deck concept.</p>
                     </div>`;
             }
         }
