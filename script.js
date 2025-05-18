@@ -1164,12 +1164,36 @@ async function searchCardsInDatabase(searchParams) {
                     .map(num => parseInt(num.trim()) - 1) // Convert to 0-based indices
                     .filter(num => !isNaN(num));
 
-                if (selectedIndices.length !== 5) {
-                    console.error('GPT did not select exactly 5 commanders:', selectedIndices);
-                    throw new Error('GPT did not select exactly 5 commanders. Requesting new analysis.');
+                if (selectedIndices.length < 5) {
+                    // Not enough commanders selected - analyze why these were chosen and search for more
+                    console.log('Not enough commanders selected, performing additional search...');
+                    
+                    // Extract explanation from analysis
+                    const explanation = analysis.split('\n').slice(1).join('\n');
+                    
+                    // Get new search parameters based on the successful matches
+                    const selectedCommanders = selectedIndices.map(index => top10Results[index]);
+                    const refinedSearchParams = {
+                        ...searchParams,
+                        query: searchParams.query + ' ' + selectedCommanders.map(cmd => 
+                            cmd.card.oracle_text?.split('.')[0] || '').join(' '), // Add first line of oracle text from successful matches
+                        options: {
+                            ...searchParams.options,
+                            minSimilarity: Math.max(0.1, searchParams.options.minSimilarity - 0.1) // Slightly lower similarity threshold
+                        }
+                    };
+                    
+                    // Perform another search excluding already found commanders
+                    const additionalResults = await searchCardsInDatabase(refinedSearchParams);
+                    
+                    // Filter out commanders we already found
+                    const newCommanders = additionalResults.filter(cmd => 
+                        !selectedCommanders.some(selected => selected.card.name === cmd.name));
+                    
+                    // Combine results
+                    return [...selectedCommanders, ...newCommanders].slice(0, 5);
                 }
 
-                // Validate indices are within bounds
                 if (selectedIndices.some(index => index < 0 || index >= top10Results.length)) {
                     console.error('GPT selected invalid commander indices:', selectedIndices);
                     throw new Error('Invalid commander indices selected. Requesting new analysis.');

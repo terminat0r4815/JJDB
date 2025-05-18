@@ -342,17 +342,28 @@ app.post('/api/analyze-top-commanders', async (req, res) => {
         const { commanders, deckConcept } = req.body;
         
         const systemPrompt = `You are an expert Magic: The Gathering Commander deck analyst.
-Your task is to analyze the provided commanders and either:
-1. Select up to 5 of the best matches for the deck concept, or
-2. Provide a refined search query to find better matches.
+Your task is to analyze the provided commanders and select the best matches for the deck concept.
+
+IMPORTANT GUIDELINES:
+1. Analyze each commander's similarity score and mechanical fit
+2. Select ONLY the commanders that are truly good fits (1-5 commanders)
+3. Do not select commanders just to reach 5 selections
+4. Consider both mechanical and thematic alignment
+5. Pay special attention to commanders with similarity scores above 0.4
 
 If you find suitable commanders, respond with:
 SELECTED: [comma-separated list of indices]
-[Explanation of choices]
+[Detailed explanation for each selected commander]
 
 If no commanders are suitable, respond with:
 SEARCH: [new search query]
-[Explanation of why current options don't work]`;
+[Explanation of why current options don't work]
+
+Your explanation should include:
+1. Why each selected commander fits the concept
+2. How their abilities align with the strategy
+3. Any potential synergies between selected commanders
+4. Suggestions for how they could work in the 99 if not chosen as the main commander`;
 
         const userPrompt = `Analyze these potential commanders for the deck concept: "${deckConcept}"
 
@@ -370,8 +381,9 @@ ${commander.keywords.length > 0 ? `Keywords: ${commander.keywords.join(', ')}` :
 Your task:
 1. Analyze how well each commander matches the deck concept
 2. Consider their mechanical synergies, color identity, and effectiveness
-3. If you find good matches, select up to 5 best commanders and explain why
-4. If none are suitable, provide a refined search query that would find better matches
+3. Select ONLY the commanders that truly fit the concept (up to 5)
+4. Provide detailed explanations for why each selected commander fits
+5. If selecting fewer than 5, explain why these stand out from the others
 
 Remember to start your response with either SELECTED: or SEARCH:`;
 
