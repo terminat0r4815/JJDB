@@ -1151,7 +1151,48 @@ async function searchCardsInDatabase(searchParams) {
                 // Extract the new search query
                 const newQuery = analysis.split('\n')[0].replace('SEARCH:', '').trim();
                 const explanation = analysis.split('\n').slice(1).join('\n');
-                throw new Error(`Need to refine search: ${explanation}\nNew Query: ${newQuery}`);
+                
+                console.log('GPT suggests new search. Explanation:', explanation);
+                console.log('New search query:', newQuery);
+                
+                // Store the previous search results for comparison
+                const previousResults = top10Results;
+                
+                // Create refined search parameters
+                const refinedSearchParams = {
+                    ...searchParams,
+                    query: newQuery,
+                    options: {
+                        ...searchParams.options,
+                        minSimilarity: Math.max(0.1, searchParams.options.minSimilarity - 0.1), // Lower threshold slightly
+                        excludeCards: previousResults.map(r => r.card.name) // Exclude previous results
+                    }
+                };
+                
+                // Perform the new search
+                console.log('Performing refined search with params:', refinedSearchParams);
+                const newResults = await searchCardsInDatabase(refinedSearchParams);
+                
+                // If we got valid results from the new search, return those
+                if (newResults && Array.isArray(newResults) && newResults.length > 0) {
+                    console.log('Found new potential commanders:', newResults.length);
+                    return newResults;
+                }
+                
+                // If new search didn't yield better results, combine best results from both searches
+                console.log('Combining results from both searches...');
+                const combinedResults = [...previousResults, ...top10Results]
+                    .filter((result, index, self) => 
+                        index === self.findIndex(r => r.card.name === result.card.name))
+                    .sort((a, b) => b.similarity - a.similarity)
+                    .slice(0, 5);
+                
+                if (combinedResults.length > 0) {
+                    return combinedResults;
+                }
+                
+                // If we still don't have good results, throw an error
+                throw new Error('Unable to find suitable commanders after multiple searches. Please try refining your deck concept.');
             }
 
             if (analysis.startsWith('SELECTED:')) {

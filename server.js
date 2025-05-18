@@ -497,83 +497,85 @@ app.post('/api/cards/search', async (req, res) => {
         const { searchType, query, options } = req.body;
         let results;
 
-        if (searchType === 'semantic') {
-            // Enhance search options for commander search
-            const isCommanderSearch = query.toLowerCase().includes('legendary') || 
-                                   query.toLowerCase().includes('commander');
-            
+        if (searchType === 'semantic' || searchType === 'hybrid') {
+            // Log the search configuration
+            console.log('\nSearch Configuration:');
+            console.log('Query:', query);
+            console.log('Search Type:', searchType);
+            console.log('Options:', JSON.stringify(options, null, 2));
+
+            // Configure search options
             const searchOptions = {
                 ...options,
-                isCommanderSearch,
-                // Lower base similarity threshold but compensate with better filtering
-                minSimilarity: 0.15,
-                limit: 100, // Increased pool for better analysis
-                searchComponents: ['name', 'type', 'abilities', 'theme', 'keywords'],
-                // Add commander-specific boosts
+                minSimilarity: options.minSimilarity || 0.15,
+                limit: options.limit || 100,
+                searchComponents: options.searchComponents || ['name', 'type', 'abilities', 'theme', 'keywords'],
                 boostFactors: {
                     legendaryBoost: 0.2,
                     colorIdentityMatch: 0.15,
                     themeMatch: 0.2,
                     keywordMatch: 0.15,
-                    tribalBoost: 0.25
+                    tribalBoost: 0.25,
+                    tribalReference: 0.125
                 }
             };
 
+            // Log the actual search being performed
+            console.log('\nPerforming search with:');
+            console.log('Final Query:', query);
+            console.log('Final Options:', JSON.stringify(searchOptions, null, 2));
+
+            // Perform the search
             results = await cardService.searchCards(query, searchOptions);
             
-            // Additional filtering for commander results
-            if (isCommanderSearch) {
-                results = results.filter(result => {
-                    const card = result.card;
-                    // Must be legendary creature or have "can be your commander" text
-                    const isLegendaryCreature = card.type_line?.toLowerCase().includes('legendary creature');
-                    const canBeCommander = card.oracle_text?.toLowerCase().includes('can be your commander');
-                    const isLegalCommander = card.legalities?.commander === 'legal';
-                    
-                    return (isLegendaryCreature || canBeCommander) && isLegalCommander;
-                });
+            // Log initial results before any filtering
+            console.log('\nInitial Results (before filtering):');
+            results.slice(0, 5).forEach((result, index) => {
+                console.log(`${index + 1}. ${result.card.name}`);
+                console.log(`   Type: ${result.card.type_line}`);
+                console.log(`   Similarity: ${result.similarity.toFixed(3)}`);
+                console.log(`   Color Identity: ${result.card.color_identity.join(',')}`);
+            });
 
-                // Log detailed information about each potential commander
-                console.log('\nPotential Commanders Analysis:');
-                results.forEach((result, index) => {
-                    console.log(`\n${index + 1}. ${result.card.name}`);
-                    console.log(`Similarity Score: ${result.similarity.toFixed(3)}`);
-                    console.log(`Color Identity: ${result.card.color_identity.join(',')}`);
-                    console.log(`Type: ${result.card.type_line}`);
-                    console.log('Raw image data:', JSON.stringify(result.card.image_uris || result.card.card_faces, null, 2));
-                    if (result.card.oracle_text) {
-                        console.log(`Oracle Text: ${result.card.oracle_text.substring(0, 100)}...`);
+            // Apply explicit type filtering if cardType is specified
+            if (options.cardType && options.cardType.length > 0) {
+                const typeFilters = options.cardType.map(t => t.toLowerCase());
+                console.log('\nApplying type filters:', typeFilters);
+                
+                results = results.filter(result => {
+                    const cardType = result.card.type_line.toLowerCase();
+                    const matchesType = typeFilters.some(filter => cardType.includes(filter));
+                    if (!matchesType) {
+                        console.log(`Filtered out: ${result.card.name} (${result.card.type_line})`);
                     }
+                    return matchesType;
                 });
             }
-            
-            // Process results to ensure proper image_uris handling
-            results = results.map(result => {
-                const card = result.card;
-                
-                // Keep the original image_uris structure
-                return {
-                    ...result,
-                    card: {
-                        ...card,
-                        image_uris: card.image_uris || (card.card_faces ? {
-                            isDoubleFaced: true,
-                            front: card.card_faces[0].image_uris?.normal,
-                            back: card.card_faces[1].image_uris?.normal
-                        } : null)
-                    }
-                };
-            });
-            
-            // Take top results after all processing
-            results = results.slice(0, options.limit || 20);
-            
-            console.log(`\nFound ${results.length} potential matches`);
-            console.log('Top 5 matches with image data:');
+
+            // Log filtered results
+            console.log('\nResults after filtering:');
             results.slice(0, 5).forEach((result, index) => {
-                console.log(`${index + 1}. ${result.card.name} (Similarity: ${result.similarity.toFixed(3)})`);
-                console.log('Image URIs:', JSON.stringify(result.card.image_uris, null, 2));
+                console.log(`${index + 1}. ${result.card.name}`);
+                console.log(`   Type: ${result.card.type_line}`);
+                console.log(`   Similarity: ${result.similarity.toFixed(3)}`);
+                console.log(`   Color Identity: ${result.card.color_identity.join(',')}`);
             });
+
+            // Process results for proper image handling
+            results = results.map(result => ({
+                ...result,
+                card: {
+                    ...result.card,
+                    image_uris: result.card.image_uris || (result.card.card_faces ? {
+                        isDoubleFaced: true,
+                        front: result.card.card_faces[0].image_uris?.normal,
+                        back: result.card.card_faces[1].image_uris?.normal
+                    } : null)
+                }
+            }));
+            
+            // Take top results
+            results = results.slice(0, options.limit || 20);
         } else {
             results = await cardService.searchCards(query, options);
         }
