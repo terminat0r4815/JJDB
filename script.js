@@ -1531,7 +1531,88 @@ document.addEventListener('DOMContentLoaded', () => {
                 try {
                     console.log('Fetching commander options...');
                     cards = await searchCardsInDatabase(searchParams);
-                    break; // If successful, exit the loop
+                    
+                    // Send the search results to GPT for analysis
+                    const response = await fetch(`${BACKEND_URL}/api/analyze-top-commanders`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            commanders: cards,
+                            deckConcept: deckConcept
+                        })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('Failed to analyze commanders');
+                    }
+
+                    const analysisData = await response.json();
+                    const analysis = analysisData.choices[0].message.content;
+                    console.log('GPT Analysis:', analysis);
+
+                    // Store the full analysis explanation
+                    deckParameters.initialAnalysis = analysis.split('\n').slice(1).join('\n');
+
+                    if (analysis.startsWith('SEARCH:')) {
+                        // Extract the new search query
+                        const newQuery = analysis.split('\n')[0].replace('SEARCH:', '').trim();
+                        const explanation = analysis.split('\n').slice(1).join('\n');
+                        
+                        console.log('GPT suggests new search. Explanation:', explanation);
+                        console.log('New search query:', newQuery);
+                        
+                        // Store the previous search results for comparison
+                        const previousResults = cards;
+                        
+                        // Create refined search parameters
+                        const refinedSearchParams = {
+                            ...searchParams,
+                            query: newQuery,
+                            options: {
+                                ...searchParams.options,
+                                minSimilarity: Math.max(0.1, searchParams.options.minSimilarity - 0.1), // Lower threshold slightly
+                                excludeCards: previousResults.map(r => r.name) // Exclude previous results
+                            }
+                        };
+                        
+                        // Perform another search
+                        retryCount++;
+                        if (retryCount >= maxRetries) {
+                            throw new Error('Unable to find suitable commanders after multiple attempts. Please try refining your deck concept.');
+                        }
+                        searchParams.query = newQuery;
+                        continue;
+                    }
+
+                    if (analysis.startsWith('SELECTED:')) {
+                        // Extract the selected indices
+                        const selectedIndices = analysis
+                            .split('\n')[0]
+                            .replace('SELECTED:', '')
+                            .trim()
+                            .split(',')
+                            .map(num => parseInt(num.trim()) - 1) // Convert to 0-based indices
+                            .filter(num => !isNaN(num));
+
+                        if (selectedIndices.length === 0) {
+                            throw new Error('No suitable commanders found. Try adjusting your description.');
+                        }
+
+                        // Get the selected commanders in the specified order
+                        const selectedCommanders = selectedIndices.map(index => cards[index]);
+
+                        // Store all results for later use
+                        deckParameters.allPotentialCommanders = cards;
+
+                        // Display only the selected commanders
+                        console.log('Displaying commander options...');
+                        displayCommanderOptions(selectedCommanders);
+                        break;
+                    }
+
+                    throw new Error('Invalid analysis response from GPT');
                 } catch (error) {
                     if (error.message.startsWith('Need to refine search:')) {
                         retryCount++;
@@ -1564,9 +1645,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!cards || cards.length === 0) {
                 throw new Error('No commanders found matching your deck concept. Try adjusting your description with more specific themes or mechanics.');
             }
-
-            console.log('Displaying commander options...');
-            displayCommanderOptions(cards);
 
         } catch (error) {
             console.error('Error finding commanders:', error);

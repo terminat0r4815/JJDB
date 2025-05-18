@@ -338,6 +338,10 @@ app.post('/api/analyze-commanders', async (req, res) => {
 // Add new endpoint for analyzing top commanders
 app.post('/api/analyze-top-commanders', async (req, res) => {
     console.log("Received top commanders analysis request:", req.body);
+    console.log("Commander details with similarity scores:", req.body.commanders.map(c => ({
+        name: c.name,
+        similarity: c.similarity
+    })));
     try {
         const { commanders, deckConcept } = req.body;
         
@@ -369,13 +373,13 @@ Your explanation should include:
 
 Commander Details:
 ${commanders.map((commander, index) => `
-${index + 1}. ${commander.name} (Similarity Score: ${commander.similarity.toFixed(3)})
+${index + 1}. ${commander.name} (Similarity Score: ${commander.similarity ? commander.similarity.toFixed(3) : 'N/A'})
 Type: ${commander.type_line}
 Mana Cost: ${commander.mana_cost || 'N/A'}
 Color Identity: ${commander.color_identity.join(',')}
 Oracle Text: ${commander.oracle_text || 'N/A'}
 ${commander.power ? `Power/Toughness: ${commander.power}/${commander.toughness}` : ''}
-${commander.keywords.length > 0 ? `Keywords: ${commander.keywords.join(', ')}` : ''}
+${commander.keywords && commander.keywords.length > 0 ? `Keywords: ${commander.keywords.join(', ')}` : ''}
 `).join('\n')}
 
 Your task:
@@ -386,6 +390,11 @@ Your task:
 5. If selecting fewer than 5, explain why these stand out from the others
 
 Remember to start your response with either SELECTED: or SEARCH:`;
+
+        console.log('Sending prompts to OpenAI with commander details:', {
+            systemPrompt,
+            userPrompt: userPrompt.substring(0, 500) + '...' // Log first 500 chars of user prompt
+        });
 
         // Check OpenAI API key and organization ID
         if (!process.env.OPENAI_API_KEY) {
@@ -556,7 +565,8 @@ app.post('/api/cards/search', async (req, res) => {
                         image_uris: result.card.image_uris,
                         card_faces: result.card.card_faces,
                         legalities: result.card.legalities,
-                        edhrec_rank: result.card.edhrec_rank
+                        edhrec_rank: result.card.edhrec_rank,
+                        similarity: result.similarity
                     }));
                     return res.json(formattedResults);
                 }
@@ -576,7 +586,8 @@ app.post('/api/cards/search', async (req, res) => {
                 image_uris: result.card.image_uris,
                 card_faces: result.card.card_faces,
                 legalities: result.card.legalities,
-                edhrec_rank: result.card.edhrec_rank
+                edhrec_rank: result.card.edhrec_rank,
+                similarity: result.similarity
             }));
             
             return res.json(formattedResults || []);
