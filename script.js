@@ -25,8 +25,8 @@ const CARD_SEARCH_TOOL_DEFINITION = {
             properties: {
                 searchType: {
                     type: "string",
-                    enum: ["semantic", "oracle"],
-                    description: "Type of search to perform: 'semantic' for multi-dimensional search or 'oracle' for specific text search"
+                    enum: ["semantic", "oracle", "hybrid"],
+                    description: "Type of search to perform: 'semantic' for multi-dimensional search, 'oracle' for specific text search, or 'hybrid' for combined approach"
                 },
                 query: {
                     type: "string",
@@ -39,15 +39,15 @@ const CARD_SEARCH_TOOL_DEFINITION = {
                             type: "array",
                             items: {
                                 type: "string",
-                                enum: ["name", "type", "abilities"]
+                                enum: ["name", "type", "abilities", "oracle_text", "flavor_text", "keywords"]
                             },
-                            description: "Components to search in (for semantic search only)"
+                            description: "Components to search in"
                         },
                         minSimilarity: {
                             type: "number",
                             minimum: 0,
                             maximum: 1,
-                            description: "Minimum similarity threshold (0.5-0.8 recommended)"
+                            description: "Minimum similarity threshold (0.1-0.3 recommended for broader results)"
                         },
                         colorIdentity: {
                             type: "array",
@@ -58,33 +58,19 @@ const CARD_SEARCH_TOOL_DEFINITION = {
                             description: "Filter by color identity"
                         },
                         cardType: {
-                            oneOf: [
-                                {
-                                    type: "string",
-                                    description: "Single card type to filter by"
-                                },
-                                {
-                                    type: "array",
-                                    items: {
-                                        type: "string"
-                                    },
-                                    description: "Multiple card types to filter by"
-                                }
-                            ],
+                            type: "array",
+                            items: {
+                                type: "string"
+                            },
                             description: "Filter by card type(s)"
-                        },
-                        cmc: {
-                            type: "number",
-                            description: "Filter by converted mana cost"
-                        },
-                        rarity: {
-                            type: "string",
-                            enum: ["common", "uncommon", "rare", "mythic"],
-                            description: "Filter by rarity"
                         },
                         limit: {
                             type: "number",
                             description: "Maximum number of results to return"
+                        },
+                        includePartialMatches: {
+                            type: "boolean",
+                            description: "Whether to include partial matches in results"
                         }
                     }
                 }
@@ -962,11 +948,12 @@ async function getAIScryfallQuery(deckConcept) {
     
     const userPromptText = `User's Deck Concept: ${deckConcept}
 
-Please analyze this deck concept and generate an appropriate search query to find commanders that match the theme and strategy described.
+Please analyze this deck concept and generate appropriate search parameters to find commanders that match the theme and strategy described.
+Use the hybrid search type to combine semantic and text-based searching.
+Set a lower similarity threshold (0.1-0.3) to get more potential matches.
+Include partial matches and search across all relevant components.
 Return ONLY the JSON object with the search parameters.`;
 
-    console.log("Sending Phase 1 prompt to generate search parameters...");
-    
     try {
         const response = await fetch(`${BACKEND_URL}/api/generate-search-parameters`, {
             method: 'POST',
@@ -974,7 +961,29 @@ Return ONLY the JSON object with the search parameters.`;
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                systemPrompt: PHASE_1_SYSTEM_PROMPT,
+                systemPrompt: `You are an expert at crafting search queries for a Magic: The Gathering card database.
+Your task is to generate search parameters that will find potential commander options for a given deck concept.
+
+IMPORTANT GUIDELINES:
+1. Use the "hybrid" search type to combine semantic and text-based searching
+2. Set minSimilarity to 0.15-0.25 to get more potential matches
+3. Include ALL relevant search components
+4. Enable includePartialMatches for broader results
+5. Set a high limit (50-100) to get more options
+6. Only specify colorIdentity if explicitly mentioned or crucial to theme
+7. Break down complex themes into key mechanical and thematic elements
+
+Example format:
+{
+    "searchType": "hybrid",
+    "query": "your search text",
+    "options": {
+        "searchComponents": ["name", "type", "abilities", "oracle_text", "flavor_text", "keywords"],
+        "minSimilarity": 0.2,
+        "limit": 50,
+        "includePartialMatches": true
+    }
+}`,
                 userPrompt: userPromptText,
                 tools: [CARD_SEARCH_TOOL_DEFINITION],
                 toolChoice: { type: "function", function: { name: "search_cards" } },
@@ -999,20 +1008,24 @@ Return ONLY the JSON object with the search parameters.`;
                     let argsStr = toolCall.function.arguments;
                     console.log('Raw arguments:', argsStr);
                     
+                    // Clean up the JSON string
                     argsStr = argsStr.replace(/\/\/.*$/gm, '');
                     argsStr = argsStr.replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3');
                     
                     const searchParams = JSON.parse(argsStr);
                     console.log('Parsed search parameters:', searchParams);
                     
+                    // Ensure required fields and defaults
                     if (!searchParams.searchType || !searchParams.query) {
                         throw new Error('Invalid search parameters: missing required fields');
                     }
                     
                     searchParams.options = searchParams.options || {};
-                    searchParams.options.searchComponents = searchParams.options.searchComponents || ["name", "type", "abilities", "theme", "keywords"];
-                    searchParams.options.minSimilarity = searchParams.options.minSimilarity || 0.15;
-                    searchParams.options.limit = searchParams.options.limit || 100;
+                    searchParams.options.searchComponents = searchParams.options.searchComponents || 
+                        ["name", "type", "abilities", "oracle_text", "flavor_text", "keywords"];
+                    searchParams.options.minSimilarity = searchParams.options.minSimilarity || 0.2;
+                    searchParams.options.limit = searchParams.options.limit || 50;
+                    searchParams.options.includePartialMatches = true;
                     
                     return searchParams;
                     
@@ -1021,16 +1034,11 @@ Return ONLY the JSON object with the search parameters.`;
                     console.error("Raw arguments:", toolCall.function.arguments);
                     throw new Error(`Failed to parse search parameters: ${parseError.message}`);
                 }
-            } else {
-                console.error("AI called an unexpected tool:", toolCall.function.name);
-                throw new Error("AI responded with an unexpected tool call for search parameter generation.");
             }
-        } else {
-            console.error('No valid tool_calls structure from API:', data);
-            throw new Error('Received an unexpected response format when expecting search parameters.');
         }
+        throw new Error('Invalid response format from API');
     } catch (error) {
-        console.error('Error calling API (Phase 1):', error);
+        console.error('Error getting search parameters:', error);
         throw error;
     }
 }
@@ -1080,8 +1088,20 @@ async function searchCardsInDatabase(searchParams) {
             // Take top 10 results for GPT analysis
             const top10Results = allResults.slice(0, 10);
 
-            // Log the exact data being sent to GPT
+            // Log the exact data being sent to GPT with similarity score explanation
             console.log('\nData being sent to GPT for analysis - Top 10 Commanders:');
+            console.log('\nNOTE: Similarity Scores are calculated as follows:');
+            console.log('Base Score: Average of semantic similarity across components (name, type, abilities, etc.)');
+            console.log('Boosts applied:');
+            console.log('- Legendary Status: +0.2');
+            console.log('- Color Identity Match: +0.15');
+            console.log('- Theme Word Match: +0.2');
+            console.log('- Keyword Match: +0.15');
+            console.log('- Tribal Type Match: +0.25');
+            console.log('- Tribal Reference: +0.125');
+            console.log('\nFinal score is base score plus applicable boosts.');
+            console.log('Scores above 0.6 typically indicate strong matches with multiple boosts.\n');
+
             top10Results.forEach((result, index) => {
                 const card = result.card;
                 console.log(`\n${index + 1}. ${card.name} (Similarity Score: ${result.similarity.toFixed(3)})`);
@@ -1092,39 +1112,19 @@ async function searchCardsInDatabase(searchParams) {
                 if (card.power) console.log(`Power/Toughness: ${card.power}/${card.toughness}`);
                 if (card.keywords.length > 0) console.log(`Keywords: ${card.keywords.join(', ')}`);
                 if (card.edhrec_rank) console.log(`EDHREC Rank: ${card.edhrec_rank}`);
+                
+                // Add match explanation
+                console.log('Match Analysis:');
+                if (result.similarity > 0.6) {
+                    console.log('- Strong match with multiple boost factors');
+                } else if (result.similarity > 0.4) {
+                    console.log('- Moderate match with some boost factors');
+                } else {
+                    console.log('- Base similarity match with few or no boosts');
+                }
             });
 
-            // Send top 10 to GPT for analysis with explicit selection instructions
-            const systemPrompt = `You are an expert Magic: The Gathering Commander deck analyst.
-Your task is to analyze the provided commanders and either:
-1. Select EXACTLY 5 commanders that best match the user's deck concept, or
-2. Request a new search if the results don't align well with the concept.
-
-RESPONSE FORMAT:
-If selecting commanders:
-SELECTED:1,2,3,4,5
-[Followed by explanation of choices]
-
-If requesting new search:
-SEARCH:[new search query]
-[Followed by explanation of why current results don't match]
-
-SELECTION CRITERIA:
-- Choose EXACTLY 5 commanders
-- Commanders must align with the deck concept's theme and strategy
-- Consider color identity requirements
-- Consider mechanical synergies
-- Consider power level and complexity
-- Consider EDHREC rank for proven effectiveness
-
-If no 5 commanders from the results would make good choices for the concept, use SEARCH: to request a new search.
-
-For each selected commander, explain:
-1. Why it fits the deck concept
-2. Its key synergies and strategies
-3. How it compares to the other selected options
-4. Any potential challenges or considerations`;
-
+            // Send top 10 to GPT for analysis
             const analysisResponse = await fetch(`${BACKEND_URL}/api/analyze-top-commanders`, {
                 method: 'POST',
                 headers: {
@@ -1132,8 +1132,7 @@ For each selected commander, explain:
                 },
                 body: JSON.stringify({
                     commanders: top10Results.map(result => result.card),
-                    deckConcept: deckParameters.deckConcept,
-                    systemPrompt: systemPrompt
+                    deckConcept: deckParameters.deckConcept
                 })
             });
 
