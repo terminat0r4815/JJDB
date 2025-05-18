@@ -495,95 +495,71 @@ app.post('/api/cards/search', async (req, res) => {
     console.log("Received search request:", req.body);
     try {
         const { searchType, query, options } = req.body;
-        let results;
-
-        if (searchType === 'semantic' || searchType === 'hybrid') {
-            // Log the search configuration
-            console.log('\nSearch Configuration:');
-            console.log('Query:', query);
-            console.log('Search Type:', searchType);
-            console.log('Options:', JSON.stringify(options, null, 2));
-
-            // Configure search options
-            const searchOptions = {
-                ...options,
-                minSimilarity: options.minSimilarity || 0.15,
-                limit: options.limit || 100,
-                searchComponents: options.searchComponents || ['name', 'type', 'abilities', 'theme', 'keywords'],
-                boostFactors: {
-                    legendaryBoost: 0.2,
-                    colorIdentityMatch: 0.15,
-                    themeMatch: 0.2,
-                    keywordMatch: 0.15,
-                    tribalBoost: 0.25,
-                    tribalReference: 0.125
-                }
-            };
-
-            // Log the actual search being performed
-            console.log('\nPerforming search with:');
-            console.log('Final Query:', query);
-            console.log('Final Options:', JSON.stringify(searchOptions, null, 2));
-
-            // Perform the search
-            results = await cardService.searchCards(query, searchOptions);
-            
-            // Log initial results before any filtering
-            console.log('\nInitial Results (before filtering):');
-            results.slice(0, 5).forEach((result, index) => {
-                console.log(`${index + 1}. ${result.card.name}`);
-                console.log(`   Type: ${result.card.type_line}`);
-                console.log(`   Similarity: ${result.similarity.toFixed(3)}`);
-                console.log(`   Color Identity: ${result.card.color_identity.join(',')}`);
-            });
-
-            // Apply explicit type filtering if cardType is specified
-            if (options.cardType && options.cardType.length > 0) {
-                const typeFilters = options.cardType.map(t => t.toLowerCase());
-                console.log('\nApplying type filters:', typeFilters);
-                
-                results = results.filter(result => {
-                    const cardType = result.card.type_line.toLowerCase();
-                    const matchesType = typeFilters.some(filter => cardType.includes(filter));
-                    if (!matchesType) {
-                        console.log(`Filtered out: ${result.card.name} (${result.card.type_line})`);
-                    }
-                    return matchesType;
-                });
-            }
-
-            // Log filtered results
-            console.log('\nResults after filtering:');
-            results.slice(0, 5).forEach((result, index) => {
-                console.log(`${index + 1}. ${result.card.name}`);
-                console.log(`   Type: ${result.card.type_line}`);
-                console.log(`   Similarity: ${result.similarity.toFixed(3)}`);
-                console.log(`   Color Identity: ${result.card.color_identity.join(',')}`);
-            });
-
-            // Process results for proper image handling
-            results = results.map(result => ({
-                ...result,
-                card: {
-                    ...result.card,
-                    image_uris: result.card.image_uris || (result.card.card_faces ? {
-                        isDoubleFaced: true,
-                        front: result.card.card_faces[0].image_uris?.normal,
-                        back: result.card.card_faces[1].image_uris?.normal
-                    } : null)
-                }
-            }));
-            
-            // Take top results
-            results = results.slice(0, options.limit || 20);
-        } else {
-            results = await cardService.searchCards(query, options);
+        
+        // Remove color words from query if color identity is specified
+        let processedQuery = query;
+        if (options?.colorIdentity?.length > 0) {
+            const colorWords = ['white', 'blue', 'black', 'red', 'green'];
+            processedQuery = query.split(' ')
+                .filter(word => !colorWords.includes(word.toLowerCase()))
+                .join(' ');
         }
 
-        res.json(results);
+        // Validate search parameters
+        if (!searchType || !processedQuery) {
+            return res.status(400).json({
+                error: 'Invalid search parameters',
+                details: 'Search type and query are required'
+            });
+        }
+
+        // Initialize search options with defaults
+        const searchOptions = {
+            searchComponents: ['name', 'type', 'abilities', 'oracle_text'],
+            minSimilarity: 0.2,
+            limit: 50,
+            includePartialMatches: true,
+            ...options
+        };
+
+        // Ensure minimum similarity is not too restrictive
+        if (searchOptions.includePartialMatches) {
+            searchOptions.minSimilarity = Math.min(searchOptions.minSimilarity, 0.15);
+        }
+
+        try {
+            // Perform the search
+            const results = await cardService.searchCards(processedQuery, searchOptions);
+            
+            if (!results || results.length === 0) {
+                // Try a fallback search with more relaxed parameters
+                console.log('No results found, trying fallback search...');
+                const fallbackResults = await cardService.searchCards(processedQuery, {
+                    ...searchOptions,
+                    minSimilarity: 0.1,
+                    includePartialMatches: true
+                });
+                
+                if (fallbackResults && fallbackResults.length > 0) {
+                    console.log(`Found ${fallbackResults.length} results with fallback search`);
+                    return res.json(fallbackResults);
+                }
+            }
+            
+            return res.json(results || []);
+        } catch (searchError) {
+            console.error('Error in card search:', searchError);
+            return res.status(500).json({
+                error: 'Search operation failed',
+                details: searchError.message
+            });
+        }
     } catch (error) {
-        console.error('Error searching cards:', error);
-        res.status(500).json({ error: error.message });
+        console.error('Error processing search request:', error);
+        return res.status(500).json({
+            error: 'Internal server error',
+            details: error.message
+        });
     }
 });
 

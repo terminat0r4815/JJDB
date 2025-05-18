@@ -155,8 +155,26 @@ class CardEmbeddingService {
             ? card.color_identity.join('') 
             : 'C';
 
-        // Get primary card type (e.g., "Creature", "Instant", "Artifact")
-        const primaryType = card.type_line.split(' — ')[0].split(' ')[0];
+        // Get primary card type, handling Legendary Creatures properly
+        let primaryType;
+        const typeLine = card.type_line.split(' — ')[0];
+        if (typeLine.includes('Creature')) {
+            primaryType = 'Creature';
+        } else if (typeLine.includes('Artifact')) {
+            primaryType = 'Artifact';
+        } else if (typeLine.includes('Enchantment')) {
+            primaryType = 'Enchantment';
+        } else if (typeLine.includes('Planeswalker')) {
+            primaryType = 'Planeswalker';
+        } else if (typeLine.includes('Land')) {
+            primaryType = 'Land';
+        } else if (typeLine.includes('Instant')) {
+            primaryType = 'Instant';
+        } else if (typeLine.includes('Sorcery')) {
+            primaryType = 'Sorcery';
+        } else {
+            primaryType = typeLine.split(' ')[0];
+        }
 
         // Create directory structure: card_data/COLORS/TYPE/
         const dirPath = path.join(this.cardsDir, colorIdentity, primaryType);
@@ -795,197 +813,176 @@ class CardEmbeddingService {
 
     // Add concurrency-safe search method
     async searchCards(query, options = {}) {
-        // Ensure service is initialized
-        await this.initialize();
+        try {
+            // Normalize options with defaults
+            const searchOptions = {
+                searchComponents: ['name', 'type', 'abilities', 'oracle_text'],
+                minSimilarity: 0.2,
+                limit: 50,
+                includePartialMatches: true,
+                ...options
+            };
 
-        const cacheKey = JSON.stringify({ query, options });
-        
-        // Try to get from cache first
-        const cached = await this.getFromCache(cacheKey);
-        if (cached) {
-            return cached;
-        }
-
-        // If not in cache, perform search
-        const results = await this.performSearch(query, options);
-        
-        // Cache results
-        await this.setCache(cacheKey, results);
-        
-        return results;
-    }
-
-    // Separate search logic for better concurrency
-    async performSearch(query, options = {}) {
-        const {
-            limit = 20,
-            minSimilarity = 0.2,
-            searchComponents = ['name', 'type', 'abilities', 'theme', 'keywords'],
-            colorIdentity = null,
-            cardType = null,
-            cmc = null,
-            rarity = null,
-            isCommanderSearch = false,
-            boostFactors = {
-                legendaryBoost: 0.2,
-                colorIdentityMatch: 0.15,
-                themeMatch: 0.2,
-                keywordMatch: 0.15,
-                tribalBoost: 0.25,
-                tagBoost: 0.2
+            // Create query embedding
+            const queryEmbedding = await this.createEmbedding(query);
+            if (!queryEmbedding) {
+                throw new Error('Failed to create query embedding');
             }
-        } = options;
 
-        // Create embedding for the search query
-        const queryEmbedding = await this.createEmbedding(query);
-        const queryWords = query.toLowerCase().split(/\s+/);
+            // Get all cards that match initial criteria
+            let candidates = Array.from(this.cards.values());
 
-        // Check if this is a tribal search
-        const tribalTypes = ['dragon', 'dragons', 'goblin', 'goblins', 'elf', 'elves', 'zombie', 'zombies', 
-                            'vampire', 'vampires', 'wizard', 'wizards', 'warrior', 'warriors', 'angel', 'angels',
-                            'demon', 'demons', 'elemental', 'elementals', 'dinosaur', 'dinosaurs', 'merfolk',
-                            'sliver', 'slivers', 'spirit', 'spirits', 'giant', 'giants', 'beast', 'beasts'];
-        
-        const requestedTribes = queryWords.filter(word => tribalTypes.includes(word));
-        const isTribalSearch = requestedTribes.length > 0;
-
-        // Get all cards that match the basic filters
-        let candidates = Array.from(this.cards.values());
-
-        // If this is a commander search, pre-filter for valid commanders
-        if (isCommanderSearch) {
-            candidates = candidates.filter(card => {
-                const isLegendaryCreature = card.type_line.toLowerCase().includes('legendary creature');
-                const canBeCommander = card.oracle_text?.toLowerCase().includes('can be your commander');
-                const isLegalCommander = card.legalities?.commander === 'legal';
+            // Filter by color identity if specified
+            if (searchOptions.colorIdentity) {
+                const requiredColors = Array.isArray(searchOptions.colorIdentity) 
+                    ? searchOptions.colorIdentity.map(c => c.toUpperCase())
+                    : [searchOptions.colorIdentity.toUpperCase()];
                 
-                // For tribal searches, prioritize commanders of the right type
-                if (isTribalSearch) {
+                candidates = candidates.filter(card => {
+                    const cardColors = card.color_identity || [];
+                    // Card must have exactly these colors, no more, no less
+                    return requiredColors.length === cardColors.length &&
+                           requiredColors.every(color => cardColors.includes(color));
+                });
+            }
+
+            // Filter by card type if specified
+            if (searchOptions.cardType) {
+                const cardTypes = Array.isArray(searchOptions.cardType) 
+                    ? searchOptions.cardType 
+                    : [searchOptions.cardType];
+                
+                candidates = candidates.filter(card => {
                     const cardTypeLine = card.type_line.toLowerCase();
-                    const hasRequestedType = requestedTribes.some(tribe => {
-                        // Handle singular/plural forms
-                        const singularTribe = tribe.replace(/s$/, '');
-                        return cardTypeLine.includes(singularTribe);
+                    return cardTypes.every(type => {
+                        const typePattern = type.toLowerCase();
+                        // Check both main type and subtypes
+                        return cardTypeLine.includes(typePattern) ||
+                               (card.oracle_text && card.oracle_text.toLowerCase().includes(typePattern));
                     });
-                    
-                    // If it's a tribal search, require the commander to either be of that type
-                    // or have text referencing that type
-                    if (!hasRequestedType) {
-                        const oracleText = card.oracle_text?.toLowerCase() || '';
-                        const referencesType = requestedTribes.some(tribe => {
-                            const singularTribe = tribe.replace(/s$/, '');
-                            return oracleText.includes(singularTribe);
-                        });
-                        if (!referencesType) {
-                            return false;
+                });
+            }
+
+            // Calculate similarity scores for each component
+            const results = candidates.map(card => {
+                let totalSimilarity = 0;
+                let componentCount = 0;
+                let maxComponentSimilarity = 0;
+
+                // Calculate similarity for each requested component
+                for (const component of searchOptions.searchComponents) {
+                    const cardText = this.getCardComponent(card, component);
+                    if (cardText) {
+                        const componentEmbedding = this.getComponentEmbedding(card, component);
+                        if (componentEmbedding) {
+                            const similarity = this.cosineSimilarity(queryEmbedding, componentEmbedding);
+                            totalSimilarity += similarity;
+                            maxComponentSimilarity = Math.max(maxComponentSimilarity, similarity);
+                            componentCount++;
                         }
                     }
                 }
-                
-                return (isLegendaryCreature || canBeCommander) && isLegalCommander;
-            });
-        }
 
-        // Apply color identity filter if specified
-        if (colorIdentity) {
-            const colors = Array.isArray(colorIdentity) ? colorIdentity : [colorIdentity];
-            candidates = candidates.filter(card => {
-                const hasAllColors = colors.every(color => card.color_identity.includes(color));
-                const hasOnlySpecifiedColors = card.color_identity.length === colors.length;
-                return hasAllColors && hasOnlySpecifiedColors;
-            });
-        }
+                // Calculate weighted similarity score
+                let similarity = componentCount > 0 ? 
+                    (0.7 * (totalSimilarity / componentCount) + 0.3 * maxComponentSimilarity) : 0;
 
-        // Calculate similarity scores for each card
-        const results = candidates.map(card => {
-            let totalSimilarity = 0;
-            let componentCount = 0;
-
-            // Calculate base similarity from embeddings
-            for (const component of searchComponents) {
-                if (card.embeddings[component]) {
-                    const similarity = this.cosineSimilarity(
-                        queryEmbedding,
-                        card.embeddings[component]
-                    );
-                    totalSimilarity += similarity;
-                    componentCount++;
-                }
-            }
-
-            let avgSimilarity = componentCount > 0 ? totalSimilarity / componentCount : 0;
-
-            // Apply commander-specific boosts
-            if (isCommanderSearch) {
-                // Boost for being legendary
+                // Apply boost factors
                 if (card.type_line.toLowerCase().includes('legendary')) {
-                    avgSimilarity += boostFactors.legendaryBoost;
+                    similarity += 0.2;
                 }
-
-                // Boost for color identity match
-                if (colorIdentity && card.color_identity) {
-                    const colors = Array.isArray(colorIdentity) ? colorIdentity : [colorIdentity];
-                    const colorMatch = colors.every(color => card.color_identity.includes(color));
-                    if (colorMatch) {
-                        avgSimilarity += boostFactors.colorIdentityMatch;
-                    }
-                }
-
-                // Boost for theme matching
-                const cardText = (card.oracle_text || '').toLowerCase();
-                const themeMatch = queryWords.some(word => 
-                    cardText.includes(word) && word.length > 3 // Ignore small words
-                );
-                if (themeMatch) {
-                    avgSimilarity += boostFactors.themeMatch;
-                }
-
-                // Boost for keyword matching
-                const keywordMatch = card.keywords.some(keyword =>
-                    queryWords.includes(keyword.toLowerCase())
-                );
-                if (keywordMatch) {
-                    avgSimilarity += boostFactors.keywordMatch;
-                }
-
-                // Apply tribal-specific boosts
-                if (isTribalSearch) {
-                    const cardTypeLine = card.type_line.toLowerCase();
-                    const cardText = card.oracle_text?.toLowerCase() || '';
+                
+                // Boost for exact type matches
+                if (searchOptions.cardType) {
+                    const cardTypes = Array.isArray(searchOptions.cardType) 
+                        ? searchOptions.cardType 
+                        : [searchOptions.cardType];
                     
-                    // Check if the card is of the requested tribe
-                    const isTribalType = requestedTribes.some(tribe => {
-                        const singularTribe = tribe.replace(/s$/, '');
-                        return cardTypeLine.includes(singularTribe);
+                    cardTypes.forEach(type => {
+                        if (card.type_line.toLowerCase().includes(type.toLowerCase())) {
+                            similarity += 0.15;
+                        }
                     });
-
-                    // Check if the card references the tribe in its text
-                    const referencesTribalType = requestedTribes.some(tribe => {
-                        const singularTribe = tribe.replace(/s$/, '');
-                        return cardText.includes(singularTribe);
-                    });
-
-                    // Apply tribal boosts
-                    if (isTribalType) {
-                        avgSimilarity += boostFactors.tribalBoost;
-                    }
-                    if (referencesTribalType) {
-                        avgSimilarity += boostFactors.tribalBoost * 0.5;
-                    }
                 }
+
+                // Boost for tribal matches in oracle text
+                if (card.oracle_text) {
+                    const tribalWords = query.toLowerCase().split(/\s+/);
+                    tribalWords.forEach(word => {
+                        if (word.length > 3 && card.oracle_text.toLowerCase().includes(word)) {
+                            similarity += 0.1;
+                        }
+                    });
+                }
+
+                return {
+                    card,
+                    similarity
+                };
+            });
+
+            // Filter by minimum similarity
+            let filteredResults = results.filter(result => 
+                result.similarity >= (searchOptions.includePartialMatches ? 
+                    Math.min(searchOptions.minSimilarity, 0.15) : 
+                    searchOptions.minSimilarity)
+            );
+
+            // Sort by similarity
+            filteredResults.sort((a, b) => b.similarity - a.similarity);
+
+            // If no results found with current threshold, try with a lower threshold
+            if (filteredResults.length === 0 && searchOptions.includePartialMatches) {
+                filteredResults = results
+                    .filter(result => result.similarity >= 0.1)
+                    .sort((a, b) => b.similarity - a.similarity);
             }
 
-            return {
-                card,
-                similarity: avgSimilarity
-            };
-        });
+            // Limit results
+            return filteredResults.slice(0, searchOptions.limit);
 
-        // Filter by minimum similarity and sort
-        return results
-            .filter(result => result.similarity >= minSimilarity)
-            .sort((a, b) => b.similarity - a.similarity)
-            .slice(0, limit);
+        } catch (error) {
+            console.error('Error in searchCards:', error);
+            throw error;
+        }
+    }
+
+    // Helper method to get card component text
+    getCardComponent(card, component) {
+        switch (component.toLowerCase()) {
+            case 'name':
+                return card.name;
+            case 'type':
+                return card.type_line;
+            case 'abilities':
+            case 'oracle_text':
+                return card.oracle_text;
+            case 'flavor_text':
+                return card.flavor_text;
+            case 'keywords':
+                return card.keywords?.join(' ');
+            default:
+                return '';
+        }
+    }
+
+    // Helper method to get component embedding
+    getComponentEmbedding(card, component) {
+        switch (component.toLowerCase()) {
+            case 'name':
+                return card.embeddings?.name;
+            case 'type':
+                return card.embeddings?.type;
+            case 'abilities':
+            case 'oracle_text':
+                return card.embeddings?.abilities;
+            case 'flavor_text':
+                return card.embeddings?.flavor_text;
+            case 'keywords':
+                return card.embeddings?.keywords;
+            default:
+                return null;
+        }
     }
 
     // Add method to handle concurrent cache cleanup

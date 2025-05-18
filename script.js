@@ -1046,6 +1046,11 @@ Example format:
 async function searchCardsInDatabase(searchParams) {
     console.log("Searching cards in database with params:", searchParams);
     
+    // Ensure minimum similarity is low enough for partial matches
+    if (searchParams.options && searchParams.options.includePartialMatches) {
+        searchParams.options.minSimilarity = Math.min(searchParams.options.minSimilarity, 0.15);
+    }
+    
     try {
         const response = await fetch(`${BACKEND_URL}/api/cards/search`, {
             method: 'POST',
@@ -1064,216 +1069,45 @@ async function searchCardsInDatabase(searchParams) {
         const data = await response.json();
         console.log('Card Search API Success:', data);
 
-        if (data && data.length > 0) {
-            // Store all results for analysis
-            const allResults = data.map(result => ({
-                ...result,
-                card: {
-                    ...result.card,
-                    similarity: result.similarity,
-                    oracle_text: result.card.oracle_text || '',
-                    type_line: result.card.type_line || '',
-                    mana_cost: result.card.mana_cost || '',
-                    cmc: result.card.cmc || 0,
-                    color_identity: result.card.color_identity || [],
-                    keywords: result.card.keywords || [],
-                    power: result.card.power,
-                    toughness: result.card.toughness,
-                    legalities: result.card.legalities || {},
-                    edhrec_rank: result.card.edhrec_rank,
-                    card_faces: result.card.card_faces || null
+        if (!data || !Array.isArray(data)) {
+            console.error('Invalid response format:', data);
+            throw new Error('Invalid response format from server');
+        }
+
+        if (data.length === 0) {
+            // Try a fallback search with more relaxed parameters
+            const fallbackParams = {
+                ...searchParams,
+                options: {
+                    ...searchParams.options,
+                    minSimilarity: 0.1,
+                    includePartialMatches: true
                 }
-            }));
-
-            // Take top 10 results for GPT analysis
-            const top10Results = allResults.slice(0, 10);
-
-            // Log the exact data being sent to GPT with similarity score explanation
-            console.log('\nData being sent to GPT for analysis - Top 10 Commanders:');
-            console.log('\nNOTE: Similarity Scores are calculated as follows:');
-            console.log('Base Score: Average of semantic similarity across components (name, type, abilities, etc.)');
-            console.log('Boosts applied:');
-            console.log('- Legendary Status: +0.2');
-            console.log('- Color Identity Match: +0.15');
-            console.log('- Theme Word Match: +0.2');
-            console.log('- Keyword Match: +0.15');
-            console.log('- Tribal Type Match: +0.25');
-            console.log('- Tribal Reference: +0.125');
-            console.log('\nFinal score is base score plus applicable boosts.');
-            console.log('Scores above 0.6 typically indicate strong matches with multiple boosts.\n');
-
-            top10Results.forEach((result, index) => {
-                const card = result.card;
-                console.log(`\n${index + 1}. ${card.name} (Similarity Score: ${result.similarity.toFixed(3)})`);
-                console.log(`Type: ${card.type_line}`);
-                console.log(`Mana Cost: ${card.mana_cost || 'N/A'}`);
-                console.log(`Color Identity: ${card.color_identity.join(',')}`);
-                console.log(`Oracle Text: ${card.oracle_text || 'N/A'}`);
-                if (card.power) console.log(`Power/Toughness: ${card.power}/${card.toughness}`);
-                if (card.keywords.length > 0) console.log(`Keywords: ${card.keywords.join(', ')}`);
-                if (card.edhrec_rank) console.log(`EDHREC Rank: ${card.edhrec_rank}`);
-                
-                // Add match explanation
-                console.log('Match Analysis:');
-                if (result.similarity > 0.6) {
-                    console.log('- Strong match with multiple boost factors');
-                } else if (result.similarity > 0.4) {
-                    console.log('- Moderate match with some boost factors');
-                } else {
-                    console.log('- Base similarity match with few or no boosts');
-                }
-            });
-
-            // Send top 10 to GPT for analysis
-            const analysisResponse = await fetch(`${BACKEND_URL}/api/analyze-top-commanders`, {
+            };
+            
+            console.log('No results found, trying fallback search with:', fallbackParams);
+            
+            const fallbackResponse = await fetch(`${BACKEND_URL}/api/cards/search`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                    commanders: top10Results.map(result => result.card),
-                    deckConcept: deckParameters.deckConcept
-                })
+                body: JSON.stringify(fallbackParams)
             });
 
-            if (!analysisResponse.ok) {
-                throw new Error('Failed to analyze potential commanders');
+            if (fallbackResponse.ok) {
+                const fallbackData = await fallbackResponse.json();
+                if (fallbackData && Array.isArray(fallbackData) && fallbackData.length > 0) {
+                    console.log('Fallback search successful:', fallbackData);
+                    return fallbackData;
+                }
             }
-
-            const analysisData = await analysisResponse.json();
-            const analysis = analysisData.choices[0].message.content;
-            console.log('GPT Analysis:', analysis);
-
-            // Store the full analysis explanation
-            deckParameters.initialAnalysis = analysis.split('\n').slice(1).join('\n');
-
-            if (analysis.startsWith('SEARCH:')) {
-                // Extract the new search query
-                const newQuery = analysis.split('\n')[0].replace('SEARCH:', '').trim();
-                const explanation = analysis.split('\n').slice(1).join('\n');
-                
-                console.log('GPT suggests new search. Explanation:', explanation);
-                console.log('New search query:', newQuery);
-                
-                // Store the previous search results for comparison
-                const previousResults = top10Results;
-                
-                // Create refined search parameters
-                const refinedSearchParams = {
-                    ...searchParams,
-                    query: newQuery,
-                    options: {
-                        ...searchParams.options,
-                        minSimilarity: Math.max(0.1, searchParams.options.minSimilarity - 0.1), // Lower threshold slightly
-                        excludeCards: previousResults.map(r => r.card.name) // Exclude previous results
-                    }
-                };
-                
-                // Perform the new search
-                console.log('Performing refined search with params:', refinedSearchParams);
-                const newResults = await searchCardsInDatabase(refinedSearchParams);
-                
-                // If we got valid results from the new search, return those
-                if (newResults && Array.isArray(newResults) && newResults.length > 0) {
-                    console.log('Found new potential commanders:', newResults.length);
-                    return newResults;
-                }
-                
-                // If new search didn't yield better results, combine best results from both searches
-                console.log('Combining results from both searches...');
-                const combinedResults = [...previousResults, ...top10Results]
-                    .filter((result, index, self) => 
-                        index === self.findIndex(r => r.card.name === result.card.name))
-                    .sort((a, b) => b.similarity - a.similarity)
-                    .slice(0, 5);
-                
-                if (combinedResults.length > 0) {
-                    return combinedResults;
-                }
-                
-                // If we still don't have good results, throw an error
-                throw new Error('Unable to find suitable commanders after multiple searches. Please try refining your deck concept.');
-            }
-
-            if (analysis.startsWith('SELECTED:')) {
-                // Extract the selected indices and verify exactly 5 were selected
-                const selectedIndices = analysis
-                    .split('\n')[0]
-                    .replace('SELECTED:', '')
-                    .trim()
-                    .split(',')
-                    .map(num => parseInt(num.trim()) - 1) // Convert to 0-based indices
-                    .filter(num => !isNaN(num));
-
-                if (selectedIndices.length < 5) {
-                    // Not enough commanders selected - analyze why these were chosen and search for more
-                    console.log('Not enough commanders selected, performing additional search...');
-                    
-                    // Extract explanation from analysis
-                    const explanation = analysis.split('\n').slice(1).join('\n');
-                    
-                    // Get new search parameters based on the successful matches
-                    const selectedCommanders = selectedIndices.map(index => top10Results[index]);
-                    const refinedSearchParams = {
-                        ...searchParams,
-                        query: searchParams.query + ' ' + selectedCommanders.map(cmd => 
-                            cmd.card.oracle_text?.split('.')[0] || '').join(' '), // Add first line of oracle text from successful matches
-                        options: {
-                            ...searchParams.options,
-                            minSimilarity: Math.max(0.1, searchParams.options.minSimilarity - 0.1) // Slightly lower similarity threshold
-                        }
-                    };
-                    
-                    // Perform another search excluding already found commanders
-                    const additionalResults = await searchCardsInDatabase(refinedSearchParams);
-                    
-                    // Filter out commanders we already found
-                    const newCommanders = additionalResults.filter(cmd => 
-                        !selectedCommanders.some(selected => selected.card.name === cmd.name));
-                    
-                    // Combine results
-                    return [...selectedCommanders, ...newCommanders].slice(0, 5);
-                }
-
-                if (selectedIndices.some(index => index < 0 || index >= top10Results.length)) {
-                    console.error('GPT selected invalid commander indices:', selectedIndices);
-                    throw new Error('Invalid commander indices selected. Requesting new analysis.');
-                }
-
-                // Get the selected commanders in the specified order
-                const selectedCommanders = selectedIndices.map(index => top10Results[index]);
-
-                // Store all results for later use
-                deckParameters.allPotentialCommanders = allResults;
-
-                // Return the selected commanders
-                return selectedCommanders.map(result => {
-                    const card = result.card;
-                    return {
-                        name: card.name,
-                        type_line: card.type_line,
-                        oracle_text: card.oracle_text,
-                        mana_cost: card.mana_cost,
-                        cmc: card.cmc,
-                        color_identity: card.color_identity,
-                        keywords: card.keywords,
-                        power: card.power,
-                        toughness: card.toughness,
-                        rarity: card.rarity,
-                        image_uris: card.image_uris,
-                        similarity: result.similarity,
-                        legalities: card.legalities,
-                        edhrec_rank: card.edhrec_rank,
-                        card_faces: card.card_faces
-                    };
-                });
-            }
-
-            throw new Error('Invalid analysis response from GPT');
-        } else {
-            console.log("No cards found or unexpected response:", data);
-            return [];
+            
+            // If still no results, throw a more descriptive error
+            throw new Error('No commanders found matching your criteria. Try broadening your search or using different keywords.');
         }
+
+        return data;
     } catch (error) {
         console.error('Error searching cards in database:', error);
         throw error;
