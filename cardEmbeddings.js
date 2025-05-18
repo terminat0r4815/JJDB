@@ -831,29 +831,66 @@ class CardEmbeddingService {
         const {
             limit = 20,
             minSimilarity = 0.2,
-            searchComponents = ['name', 'type', 'abilities', 'theme'],
+            searchComponents = ['name', 'type', 'abilities', 'theme', 'keywords'],
             colorIdentity = null,
             cardType = null,
             cmc = null,
             rarity = null,
-            isCommanderSearch = false
+            isCommanderSearch = false,
+            boostFactors = {
+                legendaryBoost: 0.2,
+                colorIdentityMatch: 0.15,
+                themeMatch: 0.2,
+                keywordMatch: 0.15,
+                tribalBoost: 0.25  // New boost factor for tribal matches
+            }
         } = options;
 
         // Create embedding for the search query
         const queryEmbedding = await this.createEmbedding(query);
+        const queryWords = query.toLowerCase().split(/\s+/);
+
+        // Check if this is a tribal search
+        const tribalTypes = ['dragon', 'dragons', 'goblin', 'goblins', 'elf', 'elves', 'zombie', 'zombies', 
+                            'vampire', 'vampires', 'wizard', 'wizards', 'warrior', 'warriors', 'angel', 'angels',
+                            'demon', 'demons', 'elemental', 'elementals', 'dinosaur', 'dinosaurs', 'merfolk',
+                            'sliver', 'slivers', 'spirit', 'spirits', 'giant', 'giants', 'beast', 'beasts'];
+        
+        const requestedTribes = queryWords.filter(word => tribalTypes.includes(word));
+        const isTribalSearch = requestedTribes.length > 0;
 
         // Get all cards that match the basic filters
         let candidates = Array.from(this.cards.values());
 
-        // If this is a commander search, filter for valid commanders
+        // If this is a commander search, pre-filter for valid commanders
         if (isCommanderSearch) {
             candidates = candidates.filter(card => {
-                // Must be a legendary creature or have "can be your commander" text
                 const isLegendaryCreature = card.type_line.toLowerCase().includes('legendary creature');
                 const canBeCommander = card.oracle_text?.toLowerCase().includes('can be your commander');
-                
-                // Check if it's legal in Commander format
                 const isLegalCommander = card.legalities?.commander === 'legal';
+                
+                // For tribal searches, prioritize commanders of the right type
+                if (isTribalSearch) {
+                    const cardTypeLine = card.type_line.toLowerCase();
+                    const hasRequestedType = requestedTribes.some(tribe => {
+                        // Handle singular/plural forms
+                        const singularTribe = tribe.replace(/s$/, '');
+                        return cardTypeLine.includes(singularTribe);
+                    });
+                    
+                    // If it's a tribal search, require the commander to either be of that type
+                    // or have text referencing that type
+                    if (!hasRequestedType) {
+                        const oracleText = card.oracle_text?.toLowerCase() || '';
+                        const referencesType = requestedTribes.some(tribe => {
+                            const singularTribe = tribe.replace(/s$/, '');
+                            return oracleText.includes(singularTribe);
+                        });
+                        if (!referencesType) {
+                            return false;
+                        }
+                    }
+                }
                 
                 return (isLegendaryCreature || canBeCommander) && isLegalCommander;
             });
@@ -863,16 +900,10 @@ class CardEmbeddingService {
         if (colorIdentity) {
             const colors = Array.isArray(colorIdentity) ? colorIdentity : [colorIdentity];
             candidates = candidates.filter(card => {
-                return colors.every(color => card.color_identity.includes(color)) &&
-                       card.color_identity.length === colors.length;
+                const hasAllColors = colors.every(color => card.color_identity.includes(color));
+                const hasOnlySpecifiedColors = card.color_identity.length === colors.length;
+                return hasAllColors && hasOnlySpecifiedColors;
             });
-        }
-
-        // Apply card type filter if specified
-        if (cardType) {
-            candidates = candidates.filter(card => 
-                card.type_line.toLowerCase().includes(cardType.toLowerCase())
-            );
         }
 
         // Calculate similarity scores for each component
@@ -880,6 +911,7 @@ class CardEmbeddingService {
             let totalSimilarity = 0;
             let componentCount = 0;
 
+            // Calculate base similarity from embeddings
             for (const component of searchComponents) {
                 if (card.embeddings[component]) {
                     const similarity = this.cosineSimilarity(
@@ -891,23 +923,66 @@ class CardEmbeddingService {
                 }
             }
 
-            const avgSimilarity = componentCount > 0 ? totalSimilarity / componentCount : 0;
+            let avgSimilarity = componentCount > 0 ? totalSimilarity / componentCount : 0;
 
-            // Boost score for commanders with matching abilities or themes
+            // Apply commander-specific boosts
             if (isCommanderSearch) {
-                // Boost for ability keywords matching the query
-                const queryWords = query.toLowerCase().split(/\s+/);
-                const abilityBoost = card.keywords.some(keyword => 
-                    queryWords.includes(keyword.toLowerCase())
-                ) ? 0.2 : 0;
+                // Boost for being legendary
+                if (card.type_line.toLowerCase().includes('legendary')) {
+                    avgSimilarity += boostFactors.legendaryBoost;
+                }
+
+                // Boost for color identity match
+                if (colorIdentity && card.color_identity) {
+                    const colors = Array.isArray(colorIdentity) ? colorIdentity : [colorIdentity];
+                    const colorMatch = colors.every(color => card.color_identity.includes(color));
+                    if (colorMatch) {
+                        avgSimilarity += boostFactors.colorIdentityMatch;
+                    }
+                }
 
                 // Boost for theme matching
-                const themeBoost = card.oracle_text?.toLowerCase().includes(query.toLowerCase()) ? 0.2 : 0;
+                const cardText = (card.oracle_text || '').toLowerCase();
+                const themeMatch = queryWords.some(word => 
+                    cardText.includes(word) && word.length > 3 // Ignore small words
+                );
+                if (themeMatch) {
+                    avgSimilarity += boostFactors.themeMatch;
+                }
 
-                return {
-                    card,
-                    similarity: avgSimilarity + abilityBoost + themeBoost
-                };
+                // Boost for keyword matching
+                const keywordMatch = card.keywords.some(keyword =>
+                    queryWords.includes(keyword.toLowerCase())
+                );
+                if (keywordMatch) {
+                    avgSimilarity += boostFactors.keywordMatch;
+                }
+
+                // Apply tribal-specific boosts
+                if (isTribalSearch) {
+                    const cardTypeLine = card.type_line.toLowerCase();
+                    const cardText = card.oracle_text?.toLowerCase() || '';
+                    
+                    // Check if the card is of the requested tribe
+                    const isTribalType = requestedTribes.some(tribe => {
+                        const singularTribe = tribe.replace(/s$/, '');
+                        return cardTypeLine.includes(singularTribe);
+                    });
+
+                    // Check if the card references the tribe in its text
+                    const referencesTribalType = requestedTribes.some(tribe => {
+                        const singularTribe = tribe.replace(/s$/, '');
+                        return cardText.includes(singularTribe);
+                    });
+
+                    // Apply tribal boosts
+                    if (isTribalType) {
+                        avgSimilarity += boostFactors.tribalBoost;
+                    }
+                    if (referencesTribalType) {
+                        avgSimilarity += boostFactors.tribalBoost * 0.5;
+                    }
+                }
             }
 
             return {

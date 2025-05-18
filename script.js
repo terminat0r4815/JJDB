@@ -103,52 +103,71 @@ IMPORTANT: You MUST return a properly formatted JSON object with the following s
     "searchType": "semantic",
     "query": "your search text",
     "options": {
-        "searchComponents": ["name", "type", "abilities"],
-        "minSimilarity": 0.3,
+        "searchComponents": ["name", "type", "abilities", "theme", "keywords"],
+        "minSimilarity": 0.15,
         "colorIdentity": ["W", "U", "B", "R", "G"],
-        "cardType": "Legendary",
-        "limit": 20
+        "cardType": "Legendary Creature",
+        "limit": 50
     }
 }
 
-When formulating the search query, prioritize in this order:
-1. PRIMARY: Theme - Focus on finding a commander that embodies or enables the user's theme
-2. PRIMARY: Creature Subtypes - Look for commanders that are or support specific creature types that fit the theme
-3. SECONDARY: Color Identity - Choose colors that best support the theme and creature types
+When formulating the search query, follow these guidelines:
 
-IMPORTANT: Your search query MUST:
-- Start with "legendary" to ensure we get legendary permanents
-- Include "creature" if you want to focus on creature commanders
-- Include any relevant permanent types (e.g., "legendary planeswalker" for planeswalker commanders)
-- Include specific creature subtypes that fit the theme
-- Focus on abilities that support the theme and creature types
+1. TRIBAL THEMES:
+   - For tribal decks (e.g., Dragons, Elves, Zombies), ALWAYS include the tribe name in the query
+   - Use both singular and plural forms (e.g., "dragon dragons")
+   - Include tribal-related keywords (e.g., for Dragons: "flying", "breath", "hoard")
+   - Consider tribal support mechanics (e.g., "tribal lord", "creature type matters")
 
-For example, if the user wants:
-- Theme: "Steampunk Robots"
-- Creature Types: "Artificer, Construct"
+2. QUERY STRUCTURE:
+   - Start with "legendary creature" for creature commanders
+   - For tribal decks, put the tribe name immediately after "legendary creature"
+   - Include key mechanics or abilities that support the theme
+   - Use relevant keywords from the user's description
+   - Keep the query focused but not too restrictive
 
-Your search query should focus on:
-1. Artificer and Construct creature types
-2. Artifact and mechanical themes
-3. Colors that support artifact strategies (usually Blue and/or Red)
+3. COLOR IDENTITY:
+   - Only specify colors that are ESSENTIAL for the theme
+   - For tribal decks, consider traditional colors for that tribe
+   - If no specific colors are mentioned, leave it open
 
-Example search query for above:
+4. THEME INTEGRATION:
+   - Include both mechanical keywords and thematic elements
+   - Use synonyms and related terms to catch similar effects
+   - Consider both aggressive and value-generating aspects
+
+Example 1 - "A dragon tribal deck that breathes fire and hoards treasure":
 {
     "searchType": "semantic",
-    "query": "legendary artificer or construct with artifact abilities",
+    "query": "legendary creature dragon dragons tribal breath fire damage treasure hoard flying",
     "options": {
-        "searchComponents": ["name", "type", "abilities"],
-        "minSimilarity": 0.3,
-        "colorIdentity": ["U", "R"],  // Blue and Red for artifact support
-        "cardType": "Legendary",
-        "limit": 20
+        "searchComponents": ["name", "type", "abilities", "theme", "keywords"],
+        "minSimilarity": 0.15,
+        "colorIdentity": ["R"], // Red is essential for fire-breathing dragons
+        "cardType": "Legendary Creature",
+        "limit": 50
     }
 }
 
-The search should aim to find:
-- A legendary permanent that embodies or enables the theme
-- A legendary permanent that supports relevant creature subtypes
-- A legendary permanent with colors that support the theme
+Example 2 - "A sneaky ninja deck that uses shadow magic to control the battlefield":
+{
+    "searchType": "semantic",
+    "query": "legendary creature ninja ninjas tribal stealth evasion shadow control ninjutsu",
+    "options": {
+        "searchComponents": ["name", "type", "abilities", "theme", "keywords"],
+        "minSimilarity": 0.15,
+        "colorIdentity": ["U", "B"], // Blue/Black for ninja and control
+        "cardType": "Legendary Creature",
+        "limit": 50
+    }
+}
+
+IMPORTANT NOTES:
+1. For tribal decks, ALWAYS include both singular and plural forms of the tribe
+2. Include tribe-specific mechanics and keywords
+3. Consider traditional color identities for tribes
+4. Include both tribal creature type and tribal support effects
+5. Don't restrict colors unless they're essential to the theme
 
 You must call the 'search_cards' function with your generated search parameters as a properly formatted JSON object. Do not provide any other text or explanation.`;
 
@@ -570,24 +589,93 @@ async function getCommanderAnalysis(commander) {
     if (!analysisDiv) return;
     
     try {
-        const systemPrompt = `You are an expert Magic: The Gathering Commander deck analyst. Analyze the provided commander card and provide insights about its strengths, weaknesses, and potential deck building strategies.`;
-        
-        const userPrompt = `Analyze this commander:
-Name: ${commander.name}
-Type: ${commander.type_line}
-Oracle Text: ${commander.oracle_text}
-Mana Cost: ${commander.mana_cost}
-Color Identity: ${commander.color_identity.join(', ')}
+        // Format commander details, handling double-faced cards
+        const getCardDetails = (card) => {
+            let details = [];
+            
+            // Handle double-faced cards
+            if (card.card_faces && card.card_faces.length > 0) {
+                card.card_faces.forEach((face, index) => {
+                    details.push(`Face ${index + 1}:`);
+                    details.push(`Name: ${face.name}`);
+                    details.push(`Type: ${face.type_line || ''}`);
+                    if (face.mana_cost) details.push(`Mana Cost: ${face.mana_cost}`);
+                    if (face.power && face.toughness) details.push(`Power/Toughness: ${face.power}/${face.toughness}`);
+                    if (face.oracle_text) details.push(`Oracle Text:\n${face.oracle_text}`);
+                    details.push(''); // Add blank line between faces
+                });
+            } else {
+                details.push(`Name: ${card.name}`);
+                details.push(`Type: ${card.type_line || ''}`);
+                if (card.mana_cost) details.push(`Mana Cost: ${card.mana_cost}`);
+                if (card.power && card.toughness) details.push(`Power/Toughness: ${card.power}/${card.toughness}`);
+                if (card.oracle_text) details.push(`Oracle Text:\n${card.oracle_text}`);
+            }
+            
+            // Add general card information
+            details.push(`Color Identity: ${card.color_identity.join(', ')}`);
+            if (card.keywords && card.keywords.length > 0) {
+                details.push(`Keywords: ${card.keywords.join(', ')}`);
+            }
+            if (card.edhrec_rank) {
+                details.push(`EDHREC Rank: ${card.edhrec_rank}`);
+            }
+            
+            return details.join('\n');
+        };
 
-Consider the following parameters:
+        const systemPrompt = `You are an expert Magic: The Gathering Commander deck analyst. 
+Analyze the provided commander card and provide insights about its strengths, weaknesses, and potential deck building strategies.
+Focus specifically on how well this commander aligns with the user's deck concept and desired strategy.
+
+Important Context:
+- You will be provided with the selected commander and a list of other potential commanders that matched the search
+- Consider how this commander compares to the alternatives for the user's strategy
+- Explain why this commander might be better or worse than similar alternatives for the specific deck concept
+- For double-faced commanders, consider both faces in your analysis
+- Consider the commander's EDHREC rank when evaluating its popularity and proven effectiveness
+
+Structure your analysis in these sections:
+1. Theme Alignment - How well does this commander fit the user's desired theme/concept?
+2. Strategy Analysis - How can this commander execute the desired strategy?
+3. Strengths - What are the commander's key strengths for this concept?
+4. Challenges - What potential challenges might arise with this theme?
+5. Alternatives Analysis - How does this commander compare to similar options?
+6. Key Cards/Synergies - Suggest some key cards or synergies that would work well.`;
+        
+        // Get all potential commanders that were found
+        const allCommanders = deckParameters.allPotentialCommanders || [];
+        const similarCommanders = allCommanders
+            .filter(c => c.card.name !== commander.name)
+            .slice(0, 10); // Get top 10 alternatives
+
+        const userPrompt = `Analyze this commander for the following deck concept:
+"${deckParameters.deckConcept}"
+
+Selected Commander Details:
+${getCardDetails(commander)}
+
+Similar Commanders Found (for comparison):
+${similarCommanders.map(c => {
+    const card = c.card;
+    return `- ${card.name} (${card.type_line})\n  ${card.oracle_text ? card.oracle_text.split('\n')[0] : ''}`
+}).join('\n')}
+
+Consider these additional parameters:
 Theme: ${deckParameters.theme}
 Playstyle: ${deckParameters.playstyle}
 Customization: ${deckParameters.customization}
 Power Level: ${deckParameters.powerLevel}
 Budget Range: ${deckParameters.budgetRange}
-Additional Preferences: ${deckParameters.additionalPreferences}`;
+Additional Preferences: ${deckParameters.additionalPreferences}
 
-        console.log('Getting commander analysis for:', commander.name);
+Please provide a detailed analysis focusing on how this commander can fulfill the user's desired deck concept and strategy.
+Compare it to the similar commanders listed above when relevant to explain why this might or might not be the best choice.
+For double-faced commanders, explain how both faces contribute to the strategy.`;
+
+        console.log('Getting commander analysis with deck concept:', deckParameters.deckConcept);
+        console.log('Commander details being sent:', getCardDetails(commander));
+        
         const response = await fetch(BACKEND_URL + '/api/analyze-commander', {
             method: 'POST',
             headers: {
@@ -605,7 +693,18 @@ Additional Preferences: ${deckParameters.additionalPreferences}`;
 
         const data = await response.json();
         const analysis = data.choices[0].message.content;
-        analysisDiv.innerHTML = analysis.replace(/\n/g, '<br>');
+        
+        // Format the analysis with sections
+        const formattedAnalysis = analysis
+            .replace(/Theme Alignment:/g, '<h4 class="analysis-section">Theme Alignment:</h4>')
+            .replace(/Strategy Analysis:/g, '<h4 class="analysis-section">Strategy Analysis:</h4>')
+            .replace(/Strengths:/g, '<h4 class="analysis-section">Strengths:</h4>')
+            .replace(/Challenges:/g, '<h4 class="analysis-section">Challenges:</h4>')
+            .replace(/Alternatives Analysis:/g, '<h4 class="analysis-section">Alternatives Analysis:</h4>')
+            .replace(/Key Cards\/Synergies:/g, '<h4 class="analysis-section">Key Cards/Synergies:</h4>')
+            .replace(/\n/g, '<br>');
+            
+        analysisDiv.innerHTML = formattedAnalysis;
         return analysis;
     } catch (error) {
         console.error('Error in getCommanderAnalysis:', error);
@@ -806,13 +905,78 @@ function initializeDeckBuilding() {
 async function getAIScryfallQuery(deckConcept) {
     console.log("Getting AI search parameters for deck concept:", deckConcept);
     
-    const userQueryContent = `User's Deck Concept: ${deckConcept}
+    const systemPromptText = `You are an expert Magic: The Gathering Commander (EDH) deck architect.
+Your primary task is to understand the user's desired deck theme and find suitable commanders that can lead that theme.
+You will do this in two steps:
+1. Generate a search query to find potential commanders
+2. Analyze the search results to ensure they match the theme
 
-Please analyze this deck concept and find commanders that match the theme and creature types described.`;
+For the search query, return a properly formatted JSON object with this structure:
+{
+    "searchType": "semantic",
+    "query": "your search text",
+    "options": {
+        "searchComponents": ["name", "type", "abilities", "theme", "keywords"],
+        "minSimilarity": 0.15,
+        "colorIdentity": ["W", "U", "B", "R", "G"],
+        "cardType": "Legendary Creature",
+        "limit": 100
+    }
+}
+
+When formulating the search query, follow these guidelines:
+1. TRIBAL THEMES:
+   - For tribal decks, ALWAYS include the tribe name in the query
+   - Use both singular and plural forms (e.g., "dragon dragons")
+   - Include tribal-related keywords
+   - Consider tribal support mechanics
+
+2. QUERY STRUCTURE:
+   - Start with "legendary creature"
+   - For tribal decks, put the tribe name immediately after
+   - Include key mechanics or abilities
+   - Use relevant keywords
+   - Keep the query focused but not too restrictive
+
+3. COLOR IDENTITY:
+   - Only specify colors that are ESSENTIAL
+   - For tribal decks, consider traditional colors
+   - If no specific colors are mentioned, leave it open
+
+4. THEME INTEGRATION:
+   - Include both mechanical keywords and thematic elements
+   - Use synonyms and related terms
+   - Consider both aggressive and value-generating aspects
+
+After receiving the search results, you will analyze them to ensure they match the theme.
+For each commander, consider:
+1. How well it matches the theme
+2. Its mechanical synergy with the strategy
+3. Its color identity's appropriateness
+4. Its potential effectiveness as a commander
+
+You must call the 'search_cards' function with your generated search parameters as a properly formatted JSON object.`;
+
+    const userPromptText = `User's Deck Concept: ${deckConcept}
+
+Please analyze this deck concept and find commanders that match the theme and strategy described.
+First, generate an appropriate search query.
+Then, analyze the results to ensure they are good matches for the concept.`;
 
     console.log("Sending Phase 1 prompt to generate search parameters...");
-    console.log("System Prompt:", PHASE_1_SYSTEM_PROMPT);
-    console.log("User Content:", userQueryContent);
+    console.log("System Prompt:", systemPromptText);
+    console.log("User Prompt:", userPromptText);
+
+    // Log the request body for debugging
+    const requestBody = {
+        systemPrompt: systemPromptText,
+        userPrompt: userPromptText,
+        tools: [CARD_SEARCH_TOOL_DEFINITION],
+        toolChoice: { type: "function", function: { name: "search_cards" } },
+        maxTokens: 1000,
+        temperature: 0.2
+    };
+    console.log("Request body:", JSON.stringify(requestBody, null, 2));
 
     try {
         const response = await fetch(`${BACKEND_URL}/api/generate-search-parameters`, {
@@ -820,21 +984,14 @@ Please analyze this deck concept and find commanders that match the theme and cr
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({
-                systemPrompt: PHASE_1_SYSTEM_PROMPT,
-                userContent: userQueryContent,
-                tools: [CARD_SEARCH_TOOL_DEFINITION],
-                toolChoice: { type: "function", function: { name: "search_cards" } },
-                maxTokens: 500,
-                temperature: 0.2
-            })
+            body: JSON.stringify(requestBody)
         });
 
         if (!response.ok) {
             const errorData = await response.json();
             console.error('API Error (Phase 1):', response.status, errorData);
-            alert(`Error from API (Phase 1): ${errorData.error?.message || response.statusText}`);
-            return null;
+            console.error('Response headers:', response.headers);
+            throw new Error(`Error from API (Phase 1): ${errorData.error?.message || response.statusText}`);
         }
 
         const data = await response.json();
@@ -843,24 +1000,113 @@ Please analyze this deck concept and find commanders that match the theme and cr
         if (data.choices && data.choices[0].message && data.choices[0].message.tool_calls) {
             const toolCall = data.choices[0].message.tool_calls[0];
             if (toolCall.function.name === "search_cards") {
-                const searchParams = JSON.parse(toolCall.function.arguments);
-                console.log("AI generated search parameters:", searchParams);
-                return searchParams;
+                try {
+                    // Get the arguments string from the tool call
+                    let argsStr = toolCall.function.arguments;
+                    console.log('Raw arguments string:', argsStr);
+                    
+                    // Remove any potential comments
+                    argsStr = argsStr.replace(/\/\/.*$/gm, '');
+                    console.log('Arguments after removing comments:', argsStr);
+                    
+                    // Ensure property names are properly quoted
+                    argsStr = argsStr.replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3');
+                    console.log('Arguments after quoting properties:', argsStr);
+                    
+                    // Parse the cleaned JSON
+                    const searchParams = JSON.parse(argsStr);
+                    console.log('Parsed search parameters:', searchParams);
+                    
+                    // Validate the search parameters
+                    if (!searchParams.searchType || !searchParams.query) {
+                        throw new Error('Invalid search parameters: missing required fields');
+                    }
+                    
+                    // Ensure options object exists
+                    searchParams.options = searchParams.options || {};
+                    
+                    // Set default values for missing options
+                    searchParams.options.searchComponents = searchParams.options.searchComponents || ["name", "type", "abilities", "theme", "keywords"];
+                    searchParams.options.minSimilarity = searchParams.options.minSimilarity || 0.15;
+                    searchParams.options.limit = searchParams.options.limit || 100;
+                    
+                    // Validate color identity format if present
+                    if (searchParams.options.colorIdentity) {
+                        if (!Array.isArray(searchParams.options.colorIdentity)) {
+                            searchParams.options.colorIdentity = [searchParams.options.colorIdentity];
+                        }
+                        searchParams.options.colorIdentity = searchParams.options.colorIdentity
+                            .filter(color => ["W", "U", "B", "R", "G"].includes(color));
+                    }
+
+                    // Get initial search results
+                    const searchResults = await searchCardsInDatabase(searchParams);
+                    
+                    // Have GPT analyze the results
+                    const analysisPrompt = `Analyze these potential commanders for the deck concept: "${deckConcept}"
+
+Found ${searchResults.length} potential commanders. For each commander, consider:
+1. How well it matches the theme
+2. Its mechanical synergy with the strategy
+3. Its color identity's appropriateness
+4. Its potential effectiveness as a commander
+
+Commander Details:
+${searchResults.map((card, index) => `
+${index + 1}. ${card.name}
+Type: ${card.type_line}
+Mana Cost: ${card.mana_cost}
+Color Identity: ${card.color_identity.join(',')}
+Oracle Text: ${card.oracle_text}
+${card.power ? `Power/Toughness: ${card.power}/${card.toughness}` : ''}
+${card.keywords.length > 0 ? `Keywords: ${card.keywords.join(', ')}` : ''}
+`).join('\n')}
+
+Please analyze these commanders and explain which ones would be the best fit for the user's deck concept.`;
+
+                    const analysisResponse = await fetch(`${BACKEND_URL}/api/analyze-commander`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            systemPrompt: 'You are an expert Magic: The Gathering Commander deck analyst. Analyze these potential commanders and explain which ones would be the best fit for the given deck concept.',
+                            userPrompt: analysisPrompt,
+                            tools: null,  // Don't use tools for analysis
+                            maxTokens: 1000,
+                            temperature: 0.7
+                        })
+                    });
+
+                    if (!analysisResponse.ok) {
+                        throw new Error('Failed to analyze potential commanders');
+                    }
+
+                    const analysisData = await analysisResponse.json();
+                    console.log('Initial Commander Analysis:', analysisData.choices[0].message.content);
+                    
+                    // Store the analysis for later use
+                    deckParameters.initialAnalysis = analysisData.choices[0].message.content;
+                    
+                    return searchParams;
+                    
+                } catch (parseError) {
+                    console.error("Error parsing search parameters:", parseError);
+                    console.error("Raw arguments:", toolCall.function.arguments);
+                    throw new Error(`Failed to parse search parameters: ${parseError.message}`);
+                }
             } else {
                 console.error("AI called an unexpected tool:", toolCall.function.name);
-                alert("AI responded with an unexpected tool call for search parameter generation.");
-                return null;
+                throw new Error("AI responded with an unexpected tool call for search parameter generation.");
             }
         } else {
             console.error('No valid tool_calls structure from API:', data);
-            alert('Received an unexpected response format when expecting search parameters.');
-            return null;
+            throw new Error('Received an unexpected response format when expecting search parameters.');
         }
 
     } catch (error) {
         console.error('Error calling API (Phase 1):', error);
-        alert(`An error occurred while trying to generate search parameters: ${error.message}`);
-        return null;
+        throw error;
     }
 }
 
@@ -885,15 +1131,67 @@ async function searchCardsInDatabase(searchParams) {
         const data = await response.json();
         console.log('Card Search API Success:', data);
 
-        // Return only the top 5 matches for commander selection
         if (data && data.length > 0) {
-            return data.slice(0, 5).map(result => {
+            // Store all results for analysis
+            const allResults = data.map(result => ({
+                ...result,
+                card: {
+                    ...result.card,
+                    similarity: result.similarity,
+                    // Ensure all card data is preserved
+                    oracle_text: result.card.oracle_text || '',
+                    type_line: result.card.type_line || '',
+                    mana_cost: result.card.mana_cost || '',
+                    cmc: result.card.cmc || 0,
+                    color_identity: result.card.color_identity || [],
+                    keywords: result.card.keywords || [],
+                    power: result.card.power,
+                    toughness: result.card.toughness,
+                    legalities: result.card.legalities || {},
+                    edhrec_rank: result.card.edhrec_rank,
+                    card_faces: result.card.card_faces || null
+                }
+            }));
+
+            // Log analysis of all potential commanders
+            console.log('\nAnalyzing all potential commanders:');
+            allResults.forEach((result, index) => {
                 const card = result.card;
-                console.log('Raw card data:', card);
-                console.log('Card image_uris:', card.image_uris);
-                console.log('Card card_faces:', card.card_faces);
+                console.log(`\n${index + 1}. ${card.name} (Score: ${result.similarity.toFixed(3)})`);
+                console.log(`Type: ${card.type_line}`);
+                console.log(`Mana Cost: ${card.mana_cost}`);
+                console.log(`Colors: ${card.color_identity.join(',')}`);
+                console.log(`Keywords: ${card.keywords.join(', ')}`);
+                if (card.power && card.toughness) {
+                    console.log(`Stats: ${card.power}/${card.toughness}`);
+                }
+                if (card.oracle_text) {
+                    console.log('Oracle Text:');
+                    card.oracle_text.split('\n').forEach(line => console.log(`  ${line}`));
+                }
+                if (card.card_faces) {
+                    console.log('Card has multiple faces:');
+                    card.card_faces.forEach((face, i) => {
+                        console.log(`Face ${i + 1}:`);
+                        console.log(`  Name: ${face.name}`);
+                        console.log(`  Type: ${face.type_line}`);
+                        if (face.oracle_text) {
+                            console.log('  Oracle Text:');
+                            face.oracle_text.split('\n').forEach(line => console.log(`    ${line}`));
+                        }
+                    });
+                }
+            });
+
+            // Store the full results for later analysis
+            deckParameters.allPotentialCommanders = allResults;
+
+            // Return top 5 for display
+            return allResults.slice(0, 5).map(result => {
+                const card = result.card;
+                console.log('Processing display card:', card.name);
                 
-                // The server already processes image_uris, so we can use it directly
+                // Ensure we preserve all necessary card data
                 const processedCard = {
                     name: card.name,
                     type_line: card.type_line,
@@ -901,11 +1199,28 @@ async function searchCardsInDatabase(searchParams) {
                     mana_cost: card.mana_cost,
                     cmc: card.cmc,
                     color_identity: card.color_identity,
+                    keywords: card.keywords,
+                    power: card.power,
+                    toughness: card.toughness,
                     rarity: card.rarity,
                     image_uris: card.image_uris,
-                    similarity: result.similarity
+                    similarity: result.similarity,
+                    legalities: card.legalities,
+                    edhrec_rank: card.edhrec_rank,
+                    card_faces: card.card_faces
                 };
-                console.log('Processed card data:', processedCard);
+
+                // Log the full card data for verification
+                console.log('Full card data for display:', {
+                    name: processedCard.name,
+                    type: processedCard.type_line,
+                    oracle: processedCard.oracle_text,
+                    mana: processedCard.mana_cost,
+                    colors: processedCard.color_identity,
+                    keywords: processedCard.keywords,
+                    faces: processedCard.card_faces ? processedCard.card_faces.length : 'none'
+                });
+
                 return processedCard;
             });
         } else {
@@ -1107,6 +1422,24 @@ function displayCommanderOptions(cards) {
     
     // Clear previous content
     container.innerHTML = '';
+
+    // Add initial analysis section if available
+    if (deckParameters.initialAnalysis) {
+        const analysisSection = document.createElement('div');
+        analysisSection.className = 'initial-analysis';
+        analysisSection.innerHTML = `
+            <h3>Initial Commander Analysis</h3>
+            <div class="analysis-content">
+                ${deckParameters.initialAnalysis.replace(/\n/g, '<br>')}
+            </div>
+        `;
+        container.appendChild(analysisSection);
+    }
+    
+    // Create container for commander cards
+    const cardsContainer = document.createElement('div');
+    cardsContainer.className = 'commander-cards-container';
+    container.appendChild(cardsContainer);
     
     // Get the Next Step button
     const nextStepButton = document.getElementById('next-step-commander');
@@ -1140,53 +1473,68 @@ function displayCommanderOptions(cards) {
     
     cards.forEach(card => {
         console.log('Processing card:', card.name);
-        const imageUrl = getCardImageUrl(card);
-        console.log('Image URL for', card.name, ':', imageUrl);
+        console.log('Card image_uris:', card.image_uris);
         
         const cardElement = document.createElement('div');
         cardElement.className = 'commander-option';
         
-        // Create the card HTML structure with overlay and flip button if needed
+        // Determine image URLs and double-faced status
+        const isDoubleFaced = card.image_uris?.isDoubleFaced || false;
+        const frontImageUrl = card.image_uris?.front?.normal || 'https://c1.scryfall.com/file/scryfall-card-backs/large/59/597b79b3-7d77-4261-871a-60dd17403388.jpg?1562638020';
+        const backImageUrl = isDoubleFaced ? (card.image_uris?.back?.normal || 'https://c1.scryfall.com/file/scryfall-card-backs/large/59/597b79b3-7d77-4261-871a-60dd17403388.jpg?1562638020') : null;
+        
+        // Create the card HTML structure
         cardElement.innerHTML = `
             <div class="card-image-container">
-                <img src="${imageUrl}" 
+                <img src="${frontImageUrl}" 
                      alt="${card.name}" 
                      class="card-image"
-                     ${card.image_uris?.isDoubleFaced ? 'data-front="' + card.image_uris.front.normal + '" data-back="' + card.image_uris.back.normal + '"' : ''}
-                     onerror="this.onerror=null; console.error('Failed to load image for ${card.name}'); this.src='https://c1.scryfall.com/file/scryfall-card-backs/large/59/597b79b3-7d77-4261-871a-60dd17403388.jpg?1562638020'">
+                     data-front="${frontImageUrl}"
+                     ${isDoubleFaced ? `data-back="${backImageUrl}"` : ''}
+                     onerror="this.onerror=null; this.src='https://c1.scryfall.com/file/scryfall-card-backs/large/59/597b79b3-7d77-4261-871a-60dd17403388.jpg?1562638020'">
                 <div class="card-image-overlay"></div>
-                ${card.image_uris?.isDoubleFaced ? '<button class="flip-button">Flip</button>' : ''}
+                ${isDoubleFaced ? '<button class="flip-button">Flip</button>' : ''}
             </div>
             <div class="card-name">${card.name}</div>
             <div class="card-type">${card.type_line || ''}</div>
+            <div class="card-details">
+                <div class="card-text">${card.oracle_text || ''}</div>
+                ${card.power ? `<div class="card-stats">Power/Toughness: ${card.power}/${card.toughness}</div>` : ''}
+                ${card.keywords.length > 0 ? `<div class="card-keywords">Keywords: ${card.keywords.join(', ')}</div>` : ''}
+            </div>
         `;
         
         // Add click handler
         cardElement.addEventListener('click', () => {
-            document.querySelectorAll('.commander-option').forEach(opt => opt.classList.remove('selected'));
-            cardElement.classList.add('selected');
+            document.querySelectorAll('.commander-option').forEach(opt => opt.classList.remove('selected-commander'));
+            cardElement.classList.add('selected-commander');
             selectCommander(card);
         });
         
         // Add flip button handler for double-faced cards
-        if (card.image_uris?.isDoubleFaced) {
+        if (isDoubleFaced) {
             const flipButton = cardElement.querySelector('.flip-button');
             const img = cardElement.querySelector('.card-image');
-            const frontUrl = card.image_uris.front.normal;
-            const backUrl = card.image_uris.back.normal;
             let showingFront = true;
+            
             flipButton.addEventListener('click', (e) => {
-                e.stopPropagation();
-                if (showingFront) {
+                e.stopPropagation(); // Prevent triggering card selection
+                const frontUrl = img.getAttribute('data-front');
+                const backUrl = img.getAttribute('data-back');
+                
+                if (showingFront && backUrl) {
                     img.src = backUrl;
                 } else {
                     img.src = frontUrl;
                 }
                 showingFront = !showingFront;
+                
+                // Update button text
+                flipButton.textContent = showingFront ? 'Flip' : 'Flip Back';
             });
         }
         
-        container.appendChild(cardElement);
+        cardsContainer.appendChild(cardElement);
     });
 }
 
@@ -1230,13 +1578,13 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log('Getting AI search parameters for deck concept:', deckConcept);
             const searchParams = await getAIScryfallQuery(deckConcept);
             if (!searchParams) {
-                throw new Error('Failed to generate search parameters. Please try again.');
+                throw new Error('Failed to generate search parameters. Please try again with a different description.');
             }
 
             console.log('Fetching commander options...');
             const cards = await searchCardsInDatabase(searchParams);
             if (!cards || cards.length === 0) {
-                throw new Error('No commanders found matching your deck concept. Try adjusting your description.');
+                throw new Error('No commanders found matching your deck concept. Try adjusting your description with more specific themes or mechanics.');
             }
 
             console.log('Displaying commander options...');
@@ -1245,12 +1593,32 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             console.error('Error finding commanders:', error);
             if (commanderOptions) {
+                // Create a more user-friendly error message
+                let errorMessage = error.message;
+                if (errorMessage.includes('JSON')) {
+                    errorMessage = 'There was an issue processing your request. Please try again with a different description.';
+                } else if (errorMessage.includes('API')) {
+                    errorMessage = 'The server is temporarily unavailable. Please try again in a few moments.';
+                }
+                
                 commanderOptions.innerHTML = `
                     <div class="error">
                         <h3>Error Finding Commanders</h3>
-                        <p>${error.message}</p>
-                        <p>Please try again or adjust your deck concept.</p>
+                        <p>${errorMessage}</p>
+                        <p class="error-suggestion">Try:</p>
+                        <ul class="error-tips">
+                            <li>Using more specific descriptions of your deck's theme</li>
+                            <li>Mentioning specific mechanics or strategies you want to use</li>
+                            <li>Including color preferences if you have any</li>
+                            <li>Describing the playstyle you're aiming for</li>
+                        </ul>
                     </div>`;
+            }
+            
+            // Re-enable the form
+            const submitButton = document.querySelector('.find-commander-btn');
+            if (submitButton) {
+                submitButton.disabled = false;
             }
         }
     });

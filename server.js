@@ -1,6 +1,13 @@
 // Load environment variables first
 require('dotenv').config();
 
+// Debug logging for environment variables
+console.log('Environment variables loaded:', {
+    hasOpenAIKey: !!process.env.OPENAI_API_KEY,
+    hasOpenAIOrg: !!process.env.OPENAI_ORGANIZATION_ID,
+    nodeEnv: process.env.NODE_ENV
+});
+
 const express = require('express');
 const path = require('path');
 const CardEmbeddingService = require('./cardEmbeddings');
@@ -70,15 +77,42 @@ function getOpenAIHeaders() {
 // OpenAI API endpoints
 app.post('/api/generate-search-parameters', async (req, res) => {
     console.log('Received request to /api/generate-search-parameters');
-    console.log('Request body:', req.body);
+    console.log('Request body:', JSON.stringify(req.body, null, 2));
+    console.log('Request headers:', req.headers);
     
     try {
-        const { systemPrompt, userContent, tools, toolChoice, maxTokens, temperature } = req.body;
+        const { systemPrompt, userPrompt, tools, toolChoice, maxTokens, temperature } = req.body;
+        
+        // Log the extracted values
+        console.log('Extracted values:', {
+            hasSystemPrompt: !!systemPrompt,
+            systemPromptLength: systemPrompt?.length,
+            hasUserPrompt: !!userPrompt,
+            userPromptLength: userPrompt?.length,
+            hasTools: !!tools,
+            toolsLength: tools?.length,
+            hasToolChoice: !!toolChoice,
+            maxTokens,
+            temperature
+        });
         
         // Validate required fields
-        if (!systemPrompt || !userContent) {
-            console.error('Missing required fields:', { systemPrompt: !!systemPrompt, userContent: !!userContent });
-            return res.status(400).json({ error: 'Missing required fields' });
+        if (!systemPrompt || !userPrompt) {
+            console.error('Missing required fields:', { 
+                systemPrompt: !!systemPrompt, 
+                userPrompt: !!userPrompt,
+                systemPromptType: typeof systemPrompt,
+                userPromptType: typeof userPrompt
+            });
+            return res.status(400).json({ 
+                error: 'Missing required fields',
+                details: {
+                    systemPrompt: !!systemPrompt,
+                    userPrompt: !!userPrompt,
+                    systemPromptType: typeof systemPrompt,
+                    userPromptType: typeof userPrompt
+                }
+            });
         }
 
         // Check OpenAI API key and organization ID
@@ -94,34 +128,44 @@ app.post('/api/generate-search-parameters', async (req, res) => {
 
         console.log('Making request to OpenAI with params:', {
             systemPrompt: systemPrompt?.substring(0, 50) + '...',
-            userContent: userContent?.substring(0, 50) + '...',
+            userPrompt: userPrompt?.substring(0, 50) + '...',
             hasTools: !!tools,
-            hasToolChoice: !!toolChoice
+            hasToolChoice: !!toolChoice,
+            maxTokens,
+            temperature
         });
 
-        const response = await axios.post('https://api.openai.com/v1/chat/completions', {
+        const openAIRequestBody = {
             model: 'gpt-4',
             messages: [
                 { role: "system", content: systemPrompt },
-                { role: "user", content: userContent }
+                { role: "user", content: userPrompt }
             ],
             tools: tools,
             tool_choice: toolChoice,
             max_tokens: maxTokens || 500,
             temperature: temperature || 0.2
-        }, {
-            headers: getOpenAIHeaders()
-        });
+        };
+
+        console.log('OpenAI request body:', JSON.stringify(openAIRequestBody, null, 2));
+
+        const response = await axios.post('https://api.openai.com/v1/chat/completions', 
+            openAIRequestBody,
+            { headers: getOpenAIHeaders() }
+        );
 
         console.log('OpenAI response status:', response.status);
         console.log('OpenAI response has choices:', !!response.data?.choices);
+        console.log('OpenAI response data:', JSON.stringify(response.data, null, 2));
 
         res.json(response.data);
     } catch (error) {
         console.error('Detailed error in generate-search-parameters:', {
             message: error.message,
             response: error.response?.data,
-            stack: error.stack
+            stack: error.stack,
+            requestBody: req.body,
+            requestHeaders: req.headers
         });
 
         // Send a more detailed error response
@@ -129,7 +173,11 @@ app.post('/api/generate-search-parameters', async (req, res) => {
             error: 'Error calling OpenAI API',
             details: error.response?.data || error.message,
             type: error.name,
-            path: '/api/generate-search-parameters'
+            path: '/api/generate-search-parameters',
+            requestInfo: {
+                bodyKeys: Object.keys(req.body),
+                contentType: req.headers['content-type']
+            }
         });
     }
 });
@@ -161,26 +209,60 @@ app.post('/api/generate-themed-deck', async (req, res) => {
 
 app.post('/api/analyze-commander', async (req, res) => {
     try {
-        const { systemPrompt, userPrompt } = req.body;
+        const { systemPrompt, userPrompt, tools, maxTokens, temperature } = req.body;
+
+        // Check OpenAI API key and organization ID
+        if (!process.env.OPENAI_API_KEY) {
+            console.error('OpenAI API key is not set in environment variables');
+            return res.status(500).json({ error: 'OpenAI API key not configured on server' });
+        }
+
+        if (!process.env.OPENAI_ORGANIZATION_ID) {
+            console.error('OpenAI Organization ID is not set in environment variables');
+            return res.status(500).json({ error: 'OpenAI Organization ID not configured on server' });
+        }
         
-        const response = await axios.post('https://api.openai.com/v1/chat/completions', {
+        const openAIRequestBody = {
             model: 'gpt-4',
             messages: [
                 { role: "system", content: systemPrompt },
                 { role: "user", content: userPrompt }
             ],
-            max_tokens: 1000,
-            temperature: 0.7
-        }, {
-            headers: getOpenAIHeaders()
-        });
+            max_tokens: maxTokens || 1000,
+            temperature: temperature || 0.7
+        };
+
+        // Only add tools if they are provided
+        if (tools) {
+            openAIRequestBody.tools = tools;
+            openAIRequestBody.tool_choice = { type: "function", function: { name: "search_cards" } };
+        }
+
+        const response = await axios.post('https://api.openai.com/v1/chat/completions', 
+            openAIRequestBody,
+            { headers: getOpenAIHeaders() }
+        );
 
         res.json(response.data);
     } catch (error) {
-        console.error('Error in analyze-commander:', error.response?.data || error.message);
+        console.error('Error in analyze-commander:', {
+            message: error.message,
+            response: error.response?.data,
+            stack: error.stack,
+            requestBody: req.body,
+            requestHeaders: req.headers
+        });
+
+        // Send a more detailed error response
         res.status(500).json({
             error: 'Error calling OpenAI API',
-            details: error.response?.data || error.message
+            details: error.response?.data || error.message,
+            type: error.name,
+            path: '/api/analyze-commander',
+            requestInfo: {
+                bodyKeys: Object.keys(req.body),
+                contentType: req.headers['content-type']
+            }
         });
     }
 });
@@ -253,38 +335,61 @@ function processImageUris(card) {
         isDoubleFaced: false
     };
 
-    // Handle double-faced cards
-    if (card.card_faces && card.card_faces.length > 0) {
-        image_uris.isDoubleFaced = true;
-        image_uris.front.normal = card.card_faces[0].image_uris?.normal || card.card_faces[0].image_url;
-        image_uris.back.normal = card.card_faces[1].image_uris?.normal || card.card_faces[1].image_url;
-    }
-    // Handle single-faced cards
-    else if (card.image_uris) {
-        if (card.image_uris.front?.front?.normal) {
-            image_uris.front.normal = card.image_uris.front.front.normal;
-        } else if (card.image_uris.front?.normal) {
-            image_uris.front.normal = card.image_uris.front.normal;
-        } else if (card.image_uris.normal) {
+    try {
+        // Handle double-faced cards
+        if (card.card_faces && card.card_faces.length > 0) {
+            image_uris.isDoubleFaced = true;
+            
+            // Process front face
+            if (card.card_faces[0].image_uris) {
+                image_uris.front.normal = card.card_faces[0].image_uris.normal;
+            } else if (card.card_faces[0].image_url) {
+                image_uris.front.normal = card.card_faces[0].image_url;
+            }
+            
+            // Process back face
+            if (card.card_faces[1].image_uris) {
+                image_uris.back.normal = card.card_faces[1].image_uris.normal;
+            } else if (card.card_faces[1].image_url) {
+                image_uris.back.normal = card.card_faces[1].image_url;
+            }
+        }
+        // Handle single-faced cards
+        else if (card.image_uris) {
             image_uris.front.normal = card.image_uris.normal;
         }
-    }
-    // Handle direct image_url
-    else if (card.image_url) {
-        image_uris.front.normal = card.image_url;
-    }
+        // Handle direct image_url
+        else if (card.image_url) {
+            image_uris.front.normal = card.image_url;
+        }
 
-    // Ensure URLs are absolute
-    if (image_uris.front.normal && !image_uris.front.normal.startsWith('http')) {
-        image_uris.front.normal = `https://api.scryfall.com${image_uris.front.normal}`;
-    }
-    if (image_uris.back.normal && !image_uris.back.normal.startsWith('http')) {
-        image_uris.back.normal = `https://api.scryfall.com${image_uris.back.normal}`;
-    }
+        // Ensure URLs are absolute
+        if (image_uris.front.normal && !image_uris.front.normal.startsWith('http')) {
+            image_uris.front.normal = `https://api.scryfall.com${image_uris.front.normal}`;
+        }
+        if (image_uris.back.normal && !image_uris.back.normal.startsWith('http')) {
+            image_uris.back.normal = `https://api.scryfall.com${image_uris.back.normal}`;
+        }
 
-    // Fallback for missing images
-    if (!image_uris.front.normal) {
-        image_uris.front.normal = 'https://c1.scryfall.com/file/scryfall-card-backs/large/59/597b79b3-7d77-4261-871a-60dd17403388.jpg?1562638020';
+        // Fallback for missing images
+        if (!image_uris.front.normal) {
+            image_uris.front.normal = 'https://c1.scryfall.com/file/scryfall-card-backs/large/59/597b79b3-7d77-4261-871a-60dd17403388.jpg?1562638020';
+        }
+        if (image_uris.isDoubleFaced && !image_uris.back.normal) {
+            image_uris.back.normal = 'https://c1.scryfall.com/file/scryfall-card-backs/large/59/597b79b3-7d77-4261-871a-60dd17403388.jpg?1562638020';
+        }
+
+        // Log the processed image URIs for debugging
+        console.log('Processed image URIs for card:', card.name, image_uris);
+
+    } catch (error) {
+        console.error('Error processing image URIs for card:', card.name, error);
+        // Set default values in case of error
+        image_uris = {
+            front: { normal: 'https://c1.scryfall.com/file/scryfall-card-backs/large/59/597b79b3-7d77-4261-871a-60dd17403388.jpg?1562638020' },
+            back: { normal: 'https://c1.scryfall.com/file/scryfall-card-backs/large/59/597b79b3-7d77-4261-871a-60dd17403388.jpg?1562638020' },
+            isDoubleFaced: false
+        };
     }
 
     return image_uris;
@@ -298,23 +403,58 @@ app.post('/api/cards/search', async (req, res) => {
         let results;
 
         if (searchType === 'semantic') {
+            // Enhance search options for commander search
+            const isCommanderSearch = query.toLowerCase().includes('legendary') || 
+                                   query.toLowerCase().includes('commander');
+            
             const searchOptions = {
                 ...options,
-                isCommanderSearch: query.toLowerCase().includes('commander'),
-                minSimilarity: 0.1,
-                limit: 20,
-                searchComponents: ['name', 'type', 'abilities', 'theme']
+                isCommanderSearch,
+                // Lower base similarity threshold but compensate with better filtering
+                minSimilarity: 0.15,
+                limit: 100, // Increased pool for better analysis
+                searchComponents: ['name', 'type', 'abilities', 'theme', 'keywords'],
+                // Add commander-specific boosts
+                boostFactors: {
+                    legendaryBoost: 0.2,
+                    colorIdentityMatch: 0.15,
+                    themeMatch: 0.2,
+                    keywordMatch: 0.15,
+                    tribalBoost: 0.25
+                }
             };
 
             results = await cardService.searchCards(query, searchOptions);
+            
+            // Additional filtering for commander results
+            if (isCommanderSearch) {
+                results = results.filter(result => {
+                    const card = result.card;
+                    // Must be legendary creature or have "can be your commander" text
+                    const isLegendaryCreature = card.type_line?.toLowerCase().includes('legendary creature');
+                    const canBeCommander = card.oracle_text?.toLowerCase().includes('can be your commander');
+                    const isLegalCommander = card.legalities?.commander === 'legal';
+                    
+                    return (isLegendaryCreature || canBeCommander) && isLegalCommander;
+                });
+
+                // Log detailed information about each potential commander
+                console.log('\nPotential Commanders Analysis:');
+                results.forEach((result, index) => {
+                    console.log(`\n${index + 1}. ${result.card.name}`);
+                    console.log(`Similarity Score: ${result.similarity.toFixed(3)}`);
+                    console.log(`Color Identity: ${result.card.color_identity.join(',')}`);
+                    console.log(`Type: ${result.card.type_line}`);
+                    if (result.card.oracle_text) {
+                        console.log(`Oracle Text: ${result.card.oracle_text.substring(0, 100)}...`);
+                    }
+                });
+            }
             
             // Process results to ensure proper image_uris handling
             results = results.map(result => {
                 const card = result.card;
                 const image_uris = processImageUris(card);
-                
-                console.log(`Processing card: ${card.name}`);
-                console.log('Image URIs:', image_uris);
                 
                 return {
                     ...result,
@@ -325,14 +465,14 @@ app.post('/api/cards/search', async (req, res) => {
                 };
             });
             
-            console.log(`Found ${results.length} potential matches`);
-            if (results.length > 0) {
-                console.log('Top matches:');
-                results.slice(0, 5).forEach((result, index) => {
-                    console.log(`${index + 1}. ${result.card.name} (Similarity: ${result.similarity.toFixed(3)})`);
-                    console.log(`   Image URIs:`, result.card.image_uris);
-                });
-            }
+            // Take top results after all processing
+            results = results.slice(0, options.limit || 20);
+            
+            console.log(`\nFound ${results.length} potential matches`);
+            console.log('Top 5 matches:');
+            results.slice(0, 5).forEach((result, index) => {
+                console.log(`${index + 1}. ${result.card.name} (Similarity: ${result.similarity.toFixed(3)})`);
+            });
         } else {
             results = await cardService.searchCards(query, options);
         }
