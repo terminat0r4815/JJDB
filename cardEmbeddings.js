@@ -254,13 +254,13 @@ class CardEmbeddingService {
                             if (!card.image_uris && card.card_faces && card.card_faces.length > 0) {
                                 card.image_uris = {
                                     isDoubleFaced: true,
-                                    front: card.card_faces[0].image_uris,
-                                    back: card.card_faces[1].image_uris
+                                    front: card.card_faces[0].image_uris?.normal || card.card_faces[0].image_url,
+                                    back: card.card_faces[1].image_uris?.normal || card.card_faces[1].image_url
                                 };
                             } else if (!card.image_uris && card.image_url) {
                                 card.image_uris = {
                                     isDoubleFaced: false,
-                                    front: { normal: card.image_url }
+                                    normal: card.image_url
                                 };
                             }
                             
@@ -471,52 +471,40 @@ class CardEmbeddingService {
             }
         }
         
+        // Fetch and process tag data
+        let tagData = null;
+        if (card.id) {
+            tagData = await this.fetchCardTags(card.id);
+            if (tagData) {
+                // Create embeddings for tag data
+                const tagText = Object.values(tagData)
+                    .flat()
+                    .join(' ');
+                embeddings.tags = await this.createEmbedding(tagText);
+                
+                // Update components with tag data
+                components.tags = tagText;
+            }
+        }
+        
         // Handle cards with multiple faces
         let image_uris;
         if (card.card_faces && card.card_faces.length > 0) {
             // Double-faced card
             image_uris = {
                 isDoubleFaced: true,
-                front: card.card_faces[0].image_uris || {
-                    normal: card.card_faces[0].image_url || null,
-                    small: card.card_faces[0].image_url || null,
-                    large: card.card_faces[0].image_url || null
-                },
-                back: card.card_faces[1].image_uris || {
-                    normal: card.card_faces[1].image_url || null,
-                    small: card.card_faces[1].image_url || null,
-                    large: card.card_faces[1].image_url || null
-                }
-            };
-        } else if (card.image_uris) {
-            // Single-faced card with image_uris
-            image_uris = {
-                isDoubleFaced: false,
-                front: card.image_uris
-            };
-        } else if (card.image_url) {
-            // Single-faced card with image_url
-            image_uris = {
-                isDoubleFaced: false,
-                front: {
-                    normal: card.image_url,
-                    small: card.image_url,
-                    large: card.image_url
-                }
+                front: card.card_faces[0].image_uris?.normal || card.card_faces[0].image_url,
+                back: card.card_faces[1].image_uris?.normal || card.card_faces[1].image_url
             };
         } else {
-            // Fallback for cards without images
+            // Single-faced card
             image_uris = {
                 isDoubleFaced: false,
-                front: {
-                    normal: null,
-                    small: null,
-                    large: null
-                }
+                normal: card.image_uris?.normal || card.image_url
             };
         }
         
-        // Store the card with its components and embeddings
+        // Store the card with its components, embeddings, and tags
         this.cards.set(card.id, {
             id: card.id,
             name: card.name,
@@ -545,7 +533,8 @@ class CardEmbeddingService {
             related_uris: card.related_uris || {},
             purchase_uris: card.purchase_uris || {},
             components: components,
-            embeddings: embeddings
+            embeddings: embeddings,
+            tags: tagData // Add tag data to card object
         });
     }
 
@@ -842,7 +831,8 @@ class CardEmbeddingService {
                 colorIdentityMatch: 0.15,
                 themeMatch: 0.2,
                 keywordMatch: 0.15,
-                tribalBoost: 0.25  // New boost factor for tribal matches
+                tribalBoost: 0.25,
+                tagBoost: 0.2
             }
         } = options;
 
@@ -906,7 +896,7 @@ class CardEmbeddingService {
             });
         }
 
-        // Calculate similarity scores for each component
+        // Calculate similarity scores for each card
         const results = candidates.map(card => {
             let totalSimilarity = 0;
             let componentCount = 0;
@@ -991,7 +981,7 @@ class CardEmbeddingService {
             };
         });
 
-        // Filter by minimum similarity and sort by highest similarity
+        // Filter by minimum similarity and sort
         return results
             .filter(result => result.similarity >= minSimilarity)
             .sort((a, b) => b.similarity - a.similarity)
@@ -1134,6 +1124,56 @@ class CardEmbeddingService {
         }
         
         return totalSize;
+    }
+
+    // Add after makeScryfallRequest method
+    async fetchCardTags(scryfallId) {
+        try {
+            await this.rateLimiter.waitForSlot();
+            const response = await axios.get(`https://tagger.scryfall.com/card/${scryfallId}/tags`, {
+                headers: {
+                    'User-Agent': 'MTG-AI-Builder/1.0',
+                    'Accept': 'application/json'
+                }
+            });
+            
+            if (response.data && response.data.tags) {
+                // Process and categorize tags
+                const tags = {
+                    art: [],
+                    mechanics: [],
+                    themes: [],
+                    colors: [],
+                    tribal: [],
+                    other: []
+                };
+                
+                response.data.tags.forEach(tag => {
+                    if (tag.category === 'art') {
+                        tags.art.push(tag.name);
+                    } else if (tag.category === 'mechanics') {
+                        tags.mechanics.push(tag.name);
+                    } else if (tag.category === 'theme') {
+                        tags.themes.push(tag.name);
+                    } else if (tag.category === 'color') {
+                        tags.colors.push(tag.name);
+                    } else if (tag.category === 'tribal') {
+                        tags.tribal.push(tag.name);
+                    } else {
+                        tags.other.push(tag.name);
+                    }
+                });
+                
+                return tags;
+            }
+            return null;
+        } catch (error) {
+            await this.logger.warn(`Failed to fetch tags for card ${scryfallId}`, {
+                error: error.message,
+                response: error.response?.data
+            });
+            return null;
+        }
     }
 }
 

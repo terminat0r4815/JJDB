@@ -293,6 +293,128 @@ app.post('/api/generate-name-suggestions', async (req, res) => {
     }
 });
 
+// Add new endpoint for secondary commander analysis
+app.post('/api/analyze-commanders', async (req, res) => {
+    console.log("Received secondary commander analysis request:", req.body);
+    try {
+        const { commanders, deckConcept, systemPrompt, userPrompt } = req.body;
+        
+        // Call OpenAI API with the analysis request
+        const response = await fetch(process.env.OPENAI_API_ENDPOINT, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+            },
+            body: JSON.stringify({
+                model: "gpt-4-turbo-preview",
+                messages: [
+                    {
+                        role: "system",
+                        content: systemPrompt || "You are an expert Magic: The Gathering Commander deck analyst. Analyze these commanders and provide strategic insights."
+                    },
+                    {
+                        role: "user",
+                        content: userPrompt
+                    }
+                ],
+                temperature: 0.7,
+                max_tokens: 1000
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to get analysis from OpenAI');
+        }
+
+        const data = await response.json();
+        res.json(data);
+    } catch (error) {
+        console.error('Error in secondary commander analysis:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Add new endpoint for analyzing top commanders
+app.post('/api/analyze-top-commanders', async (req, res) => {
+    console.log("Received top commanders analysis request:", req.body);
+    try {
+        const { commanders, deckConcept } = req.body;
+        
+        const systemPrompt = `You are an expert Magic: The Gathering Commander deck analyst.
+Your task is to analyze the provided commanders and either:
+1. Select up to 5 of the best matches for the deck concept, or
+2. Provide a refined search query to find better matches.
+
+If you find suitable commanders, respond with:
+SELECTED: [comma-separated list of indices]
+[Explanation of choices]
+
+If no commanders are suitable, respond with:
+SEARCH: [new search query]
+[Explanation of why current options don't work]`;
+
+        const userPrompt = `Analyze these potential commanders for the deck concept: "${deckConcept}"
+
+Commander Details:
+${commanders.map((commander, index) => `
+${index + 1}. ${commander.name} (Similarity Score: ${commander.similarity.toFixed(3)})
+Type: ${commander.type_line}
+Mana Cost: ${commander.mana_cost || 'N/A'}
+Color Identity: ${commander.color_identity.join(',')}
+Oracle Text: ${commander.oracle_text || 'N/A'}
+${commander.power ? `Power/Toughness: ${commander.power}/${commander.toughness}` : ''}
+${commander.keywords.length > 0 ? `Keywords: ${commander.keywords.join(', ')}` : ''}
+`).join('\n')}
+
+Your task:
+1. Analyze how well each commander matches the deck concept
+2. Consider their mechanical synergies, color identity, and effectiveness
+3. If you find good matches, select up to 5 best commanders and explain why
+4. If none are suitable, provide a refined search query that would find better matches
+
+Remember to start your response with either SELECTED: or SEARCH:`;
+
+        // Check OpenAI API key and organization ID
+        if (!process.env.OPENAI_API_KEY) {
+            console.error('OpenAI API key is not set in environment variables');
+            return res.status(500).json({ error: 'OpenAI API key not configured on server' });
+        }
+
+        if (!process.env.OPENAI_ORGANIZATION_ID) {
+            console.error('OpenAI Organization ID is not set in environment variables');
+            return res.status(500).json({ error: 'OpenAI Organization ID not configured on server' });
+        }
+
+        const response = await axios.post('https://api.openai.com/v1/chat/completions', {
+            model: "gpt-4",
+            messages: [
+                {
+                    role: "system",
+                    content: systemPrompt
+                },
+                {
+                    role: "user",
+                    content: userPrompt
+                }
+            ],
+            temperature: 0.7,
+            max_tokens: 1000
+        }, {
+            headers: getOpenAIHeaders()
+        });
+
+        console.log('OpenAI Response:', response.data);
+        res.json(response.data);
+    } catch (error) {
+        console.error('Error in commander analysis:', error.response?.data || error.message);
+        res.status(500).json({ 
+            error: 'Error calling OpenAI API',
+            details: error.response?.data || error.message
+        });
+    }
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
     console.error('Server Error:', err);
@@ -329,70 +451,31 @@ app.use((err, req, res, next) => {
 
 // Helper function to process image URIs
 function processImageUris(card) {
-    let image_uris = {
-        front: { normal: null },
-        back: { normal: null },
-        isDoubleFaced: false
-    };
-
     try {
         // Handle double-faced cards
         if (card.card_faces && card.card_faces.length > 0) {
-            image_uris.isDoubleFaced = true;
-            
-            // Process front face
-            if (card.card_faces[0].image_uris) {
-                image_uris.front.normal = card.card_faces[0].image_uris.normal;
-            } else if (card.card_faces[0].image_url) {
-                image_uris.front.normal = card.card_faces[0].image_url;
-            }
-            
-            // Process back face
-            if (card.card_faces[1].image_uris) {
-                image_uris.back.normal = card.card_faces[1].image_uris.normal;
-            } else if (card.card_faces[1].image_url) {
-                image_uris.back.normal = card.card_faces[1].image_url;
-            }
+            return {
+                isDoubleFaced: true,
+                front: card.card_faces[0].image_uris?.normal || card.card_faces[0].image_url,
+                back: card.card_faces[1].image_uris?.normal || card.card_faces[1].image_url
+            };
         }
+        
         // Handle single-faced cards
-        else if (card.image_uris) {
-            image_uris.front.normal = card.image_uris.normal;
-        }
-        // Handle direct image_url
-        else if (card.image_url) {
-            image_uris.front.normal = card.image_url;
+        const imageUrl = card.image_uris?.normal || card.image_url;
+        if (!imageUrl) {
+            console.warn('No image URL found for card:', card.name);
+            return null;
         }
 
-        // Ensure URLs are absolute
-        if (image_uris.front.normal && !image_uris.front.normal.startsWith('http')) {
-            image_uris.front.normal = `https://api.scryfall.com${image_uris.front.normal}`;
-        }
-        if (image_uris.back.normal && !image_uris.back.normal.startsWith('http')) {
-            image_uris.back.normal = `https://api.scryfall.com${image_uris.back.normal}`;
-        }
-
-        // Fallback for missing images
-        if (!image_uris.front.normal) {
-            image_uris.front.normal = 'https://c1.scryfall.com/file/scryfall-card-backs/large/59/597b79b3-7d77-4261-871a-60dd17403388.jpg?1562638020';
-        }
-        if (image_uris.isDoubleFaced && !image_uris.back.normal) {
-            image_uris.back.normal = 'https://c1.scryfall.com/file/scryfall-card-backs/large/59/597b79b3-7d77-4261-871a-60dd17403388.jpg?1562638020';
-        }
-
-        // Log the processed image URIs for debugging
-        console.log('Processed image URIs for card:', card.name, image_uris);
-
+        return {
+            isDoubleFaced: false,
+            normal: imageUrl
+        };
     } catch (error) {
         console.error('Error processing image URIs for card:', card.name, error);
-        // Set default values in case of error
-        image_uris = {
-            front: { normal: 'https://c1.scryfall.com/file/scryfall-card-backs/large/59/597b79b3-7d77-4261-871a-60dd17403388.jpg?1562638020' },
-            back: { normal: 'https://c1.scryfall.com/file/scryfall-card-backs/large/59/597b79b3-7d77-4261-871a-60dd17403388.jpg?1562638020' },
-            isDoubleFaced: false
-        };
+        return null;
     }
-
-    return image_uris;
 }
 
 // API Endpoints
@@ -445,6 +528,7 @@ app.post('/api/cards/search', async (req, res) => {
                     console.log(`Similarity Score: ${result.similarity.toFixed(3)}`);
                     console.log(`Color Identity: ${result.card.color_identity.join(',')}`);
                     console.log(`Type: ${result.card.type_line}`);
+                    console.log('Raw image data:', JSON.stringify(result.card.image_uris || result.card.card_faces, null, 2));
                     if (result.card.oracle_text) {
                         console.log(`Oracle Text: ${result.card.oracle_text.substring(0, 100)}...`);
                     }
@@ -454,13 +538,17 @@ app.post('/api/cards/search', async (req, res) => {
             // Process results to ensure proper image_uris handling
             results = results.map(result => {
                 const card = result.card;
-                const image_uris = processImageUris(card);
                 
+                // Keep the original image_uris structure
                 return {
                     ...result,
                     card: {
                         ...card,
-                        image_uris: image_uris
+                        image_uris: card.image_uris || (card.card_faces ? {
+                            isDoubleFaced: true,
+                            front: card.card_faces[0].image_uris?.normal,
+                            back: card.card_faces[1].image_uris?.normal
+                        } : null)
                     }
                 };
             });
@@ -469,9 +557,10 @@ app.post('/api/cards/search', async (req, res) => {
             results = results.slice(0, options.limit || 20);
             
             console.log(`\nFound ${results.length} potential matches`);
-            console.log('Top 5 matches:');
+            console.log('Top 5 matches with image data:');
             results.slice(0, 5).forEach((result, index) => {
                 console.log(`${index + 1}. ${result.card.name} (Similarity: ${result.similarity.toFixed(3)})`);
+                console.log('Image URIs:', JSON.stringify(result.card.image_uris, null, 2));
             });
         } else {
             results = await cardService.searchCards(query, options);

@@ -177,108 +177,85 @@ input[type="submit"]:hover, button:hover {
 }
 
 .commander-option {
-    border: 1px solid #444;
-    border-radius: 8px;
-    padding: 15px;
-    background: #23272a;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+    position: relative;
     cursor: pointer;
-    transition: transform 0.2s ease-out, box-shadow 0.2s ease-out, border-color 0.2s ease-out;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    width: 100%;
-    max-width: 400px;
-    margin: 0 auto;
+    transition: transform 0.2s ease-in-out;
 }
 
-.card-image-container {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    background: #111;
-    border-radius: 18px;
-    padding: 0.5em;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.4);
-    margin: 0 auto;
-    overflow: hidden;
-    width: 340px;
-    height: 480px;
+.commander-option:hover {
+    transform: scale(1.02);
+}
+
+.commander-option.selected-commander {
+    transform: scale(1.05);
+    box-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+}
+
+.card-image-wrapper {
     position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+.card-image {
+    width: 100%;
+    height: auto;
+    border-radius: 4.75% / 3.5%;
+    transition: transform 0.3s ease-in-out;
 }
 
 .card-image-overlay {
     position: absolute;
-    top: 0; left: 0; right: 0; bottom: 0;
-    width: 100%;
-    height: 100%;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.1);
+    opacity: 0;
+    transition: opacity 0.2s ease-in-out;
+    border-radius: 4.75% / 3.5%;
     pointer-events: none;
-    z-index: 2;
-    background: url('data:image/svg+xml;utf8,<svg width="340" height="480" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="0" width="340" height="480" rx="28" ry="28" fill="none" stroke="black" stroke-width="32"/></svg>') center/cover no-repeat;
 }
 
-.card-image {
-    display: block;
-    margin: 0 auto;
-    border-radius: 0;
-    background: #111;
-    width: 100%;
-    height: 100%;
-    box-shadow: none;
-    object-fit: cover;
-}
-
-.card-name {
-    font-weight: bold;
-    margin-top: 8px;
-    font-size: 1.2em;
-    text-align: center;
-    color: #f4f4f4;
-    width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.card-type {
-    font-size: 1em;
-    color: #aaa;
-    text-align: center;
-    width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    margin-top: 4px;
+.card-image-wrapper:hover .card-image-overlay {
+    opacity: 1;
 }
 
 .flip-button {
     position: absolute;
     bottom: 10px;
-    right: 10px;
-    padding: 6px 12px;
-    font-size: 0.9em;
-    background: rgba(0,0,0,0.6);
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.7);
     color: white;
     border: none;
-    border-radius: 4px;
+    padding: 5px 15px;
+    border-radius: 15px;
     cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s ease-in-out;
     z-index: 2;
 }
 
+.card-image-wrapper:hover .flip-button {
+    opacity: 1;
+}
+
 .flip-button:hover {
-    background: rgba(0,0,0,0.8);
+    background: rgba(0, 0, 0, 0.9);
 }
 
-.commander-option:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-    border-color: #4a90e2;
-}
-
-.commander-option.selected-commander {
-    border: 2px solid #4a90e2;
-    box-shadow: 0 0 15px rgba(74, 144, 226, 0.3);
-    background: #2a2f35;
+.no-image {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #2a2a2a;
+    color: #fff;
+    border-radius: 4.75% / 3.5%;
+    padding: 20px;
+    text-align: center;
 }
 
 .selected-commander-card {
@@ -1250,7 +1227,6 @@ hr.blue-line {
     border-radius: 12px;
     margin-bottom: 30px;
     border: 1px solid #4a90e2;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
 .initial-analysis {
@@ -1281,31 +1257,6 @@ hr.blue-line {
     padding: 20px;
 }
 
-.commander-option {
-    border: 1px solid #444;
-    border-radius: 8px;
-    padding: 15px;
-    background: #23272a;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.15);
-    cursor: pointer;
-    transition: transform 0.2s ease-out, box-shadow 0.2s ease-out, border-color 0.2s ease-out;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-}
-
-.commander-option:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-    border-color: #4a90e2;
-}
-
-.commander-option.selected-commander {
-    border: 2px solid #4a90e2;
-    box-shadow: 0 0 15px rgba(74, 144, 226, 0.3);
-    background: #2a2f35;
-}
-
 .card-details {
     margin-top: 15px;
     width: 100%;
@@ -1332,4 +1283,59 @@ hr.blue-line {
     color: #4a90e2;
     font-size: 0.9em;
     font-style: italic;
+}
+
+/* Secondary Analysis Styles */
+.secondary-analysis-container {
+    margin-top: 30px;
+    padding: 20px;
+    text-align: center;
+    background: #23272a;
+    border-radius: 8px;
+    border: 1px solid #4a90e2;
+}
+
+.secondary-analysis-result {
+    margin-top: 20px;
+    padding: 20px;
+    background: #2a2d3e;
+    border-radius: 8px;
+    color: #e0e0e0;
+    text-align: left;
+    line-height: 1.6;
+    white-space: pre-line;
+}
+
+#secondary-analysis-btn {
+    min-width: 200px;
+    font-size: 1.1em;
+    padding: 12px 24px;
+    background: transparent;
+    color: #4a90e2;
+    border: 2px solid #4a90e2;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+#secondary-analysis-btn:hover {
+    background: #4a90e2;
+    color: #fff;
+}
+
+#secondary-analysis-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+#secondary-analysis-btn.complete {
+    background: #4ae24a;
+    border-color: #4ae24a;
+    color: #fff;
+}
+
+#secondary-analysis-btn.error {
+    background: #e24a4a;
+    border-color: #e24a4a;
+    color: #fff;
 } 
