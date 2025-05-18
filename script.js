@@ -204,7 +204,8 @@ let deckParameters = {
     additionalPreferences: '',
     theme: '',
     playstyle: '',
-    deckConcept: ''
+    deckConcept: '',
+    allPotentialCommanders: []
 };
 
 // Add a variable to track the current analysis
@@ -1093,7 +1094,37 @@ async function searchCardsInDatabase(searchParams) {
                 if (card.edhrec_rank) console.log(`EDHREC Rank: ${card.edhrec_rank}`);
             });
 
-            // Send top 10 to GPT for analysis
+            // Send top 10 to GPT for analysis with explicit selection instructions
+            const systemPrompt = `You are an expert Magic: The Gathering Commander deck analyst.
+Your task is to analyze the provided commanders and either:
+1. Select EXACTLY 5 commanders that best match the user's deck concept, or
+2. Request a new search if the results don't align well with the concept.
+
+RESPONSE FORMAT:
+If selecting commanders:
+SELECTED:1,2,3,4,5
+[Followed by explanation of choices]
+
+If requesting new search:
+SEARCH:[new search query]
+[Followed by explanation of why current results don't match]
+
+SELECTION CRITERIA:
+- Choose EXACTLY 5 commanders
+- Commanders must align with the deck concept's theme and strategy
+- Consider color identity requirements
+- Consider mechanical synergies
+- Consider power level and complexity
+- Consider EDHREC rank for proven effectiveness
+
+If no 5 commanders from the results would make good choices for the concept, use SEARCH: to request a new search.
+
+For each selected commander, explain:
+1. Why it fits the deck concept
+2. Its key synergies and strategies
+3. How it compares to the other selected options
+4. Any potential challenges or considerations`;
+
             const analysisResponse = await fetch(`${BACKEND_URL}/api/analyze-top-commanders`, {
                 method: 'POST',
                 headers: {
@@ -1101,7 +1132,8 @@ async function searchCardsInDatabase(searchParams) {
                 },
                 body: JSON.stringify({
                     commanders: top10Results.map(result => result.card),
-                    deckConcept: deckParameters.deckConcept
+                    deckConcept: deckParameters.deckConcept,
+                    systemPrompt: systemPrompt
                 })
             });
 
@@ -1124,7 +1156,7 @@ async function searchCardsInDatabase(searchParams) {
             }
 
             if (analysis.startsWith('SELECTED:')) {
-                // Extract the selected indices
+                // Extract the selected indices and verify exactly 5 were selected
                 const selectedIndices = analysis
                     .split('\n')[0]
                     .replace('SELECTED:', '')
@@ -1132,6 +1164,17 @@ async function searchCardsInDatabase(searchParams) {
                     .split(',')
                     .map(num => parseInt(num.trim()) - 1) // Convert to 0-based indices
                     .filter(num => !isNaN(num));
+
+                if (selectedIndices.length !== 5) {
+                    console.error('GPT did not select exactly 5 commanders:', selectedIndices);
+                    throw new Error('GPT did not select exactly 5 commanders. Requesting new analysis.');
+                }
+
+                // Validate indices are within bounds
+                if (selectedIndices.some(index => index < 0 || index >= top10Results.length)) {
+                    console.error('GPT selected invalid commander indices:', selectedIndices);
+                    throw new Error('Invalid commander indices selected. Requesting new analysis.');
+                }
 
                 // Get the selected commanders in the specified order
                 const selectedCommanders = selectedIndices.map(index => top10Results[index]);
@@ -1559,8 +1602,6 @@ document.addEventListener('DOMContentLoaded', () => {
         // Store deck concept in deckParameters
         deckParameters.deckConcept = deckConcept;
         
-        console.log('Stored deck parameters:', deckParameters);
-        
         // Show loading state
         if (resultsSection) {
             resultsSection.style.display = 'block';
@@ -1573,8 +1614,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            console.log('Getting AI search parameters for deck concept:', deckConcept);
-            let searchParams = await getAIScryfallQuery(deckConcept);
+            // Get search parameters from GPT
+            const searchParams = await getAIScryfallQuery(deckConcept);
             if (!searchParams) {
                 throw new Error('Failed to generate search parameters. Please try again with a different description.');
             }
@@ -1605,10 +1646,11 @@ document.addEventListener('DOMContentLoaded', () => {
                             console.log('Using GPT-provided search query:', searchParams.query);
                         } else {
                             // Get new search parameters with the explanation
-                            searchParams = await getAIScryfallQuery(deckConcept + '\n\nPrevious search issue: ' + explanation);
-                            if (!searchParams) {
+                            const newParams = await getAIScryfallQuery(deckConcept + '\n\nPrevious search issue: ' + explanation);
+                            if (!newParams) {
                                 throw new Error('Failed to generate new search parameters.');
                             }
+                            Object.assign(searchParams, newParams);
                         }
                         continue;
                     }
