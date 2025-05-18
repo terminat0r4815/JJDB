@@ -1409,6 +1409,11 @@ function displayCommanderOptions(cards) {
     }
     
     cards.forEach(card => {
+        if (!card || !card.name) {
+            console.warn('Invalid card data:', card);
+            return;
+        }
+
         console.log('Processing card:', card.name);
         console.log('Card image_uris:', card.image_uris);
         
@@ -1422,7 +1427,7 @@ function displayCommanderOptions(cards) {
             <div class="card-details">
                 <div class="card-text">${card.oracle_text || ''}</div>
                 ${card.power ? `<div class="card-stats">Power/Toughness: ${card.power}/${card.toughness}</div>` : ''}
-                ${card.keywords.length > 0 ? `<div class="card-keywords">Keywords: ${card.keywords.join(', ')}</div>` : ''}
+                ${card.keywords && card.keywords.length > 0 ? `<div class="card-keywords">Keywords: ${card.keywords.join(', ')}</div>` : ''}
             </div>
         `;
         

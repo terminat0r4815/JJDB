@@ -542,11 +542,44 @@ app.post('/api/cards/search', async (req, res) => {
                 
                 if (fallbackResults && fallbackResults.length > 0) {
                     console.log(`Found ${fallbackResults.length} results with fallback search`);
-                    return res.json(fallbackResults);
+                    // Format the fallback results
+                    const formattedResults = fallbackResults.map(result => ({
+                        name: result.card.name,
+                        type_line: result.card.type_line,
+                        oracle_text: result.card.oracle_text,
+                        mana_cost: result.card.mana_cost,
+                        cmc: result.card.cmc,
+                        color_identity: result.card.color_identity,
+                        keywords: result.card.keywords || [],
+                        power: result.card.power,
+                        toughness: result.card.toughness,
+                        image_uris: result.card.image_uris,
+                        card_faces: result.card.card_faces,
+                        legalities: result.card.legalities,
+                        edhrec_rank: result.card.edhrec_rank
+                    }));
+                    return res.json(formattedResults);
                 }
             }
             
-            return res.json(results || []);
+            // Format the results
+            const formattedResults = results.map(result => ({
+                name: result.card.name,
+                type_line: result.card.type_line,
+                oracle_text: result.card.oracle_text,
+                mana_cost: result.card.mana_cost,
+                cmc: result.card.cmc,
+                color_identity: result.card.color_identity,
+                keywords: result.card.keywords || [],
+                power: result.card.power,
+                toughness: result.card.toughness,
+                image_uris: result.card.image_uris,
+                card_faces: result.card.card_faces,
+                legalities: result.card.legalities,
+                edhrec_rank: result.card.edhrec_rank
+            }));
+            
+            return res.json(formattedResults || []);
         } catch (searchError) {
             console.error('Error in card search:', searchError);
             return res.status(500).json({
