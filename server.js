@@ -338,7 +338,7 @@ app.post('/api/analyze-commanders', async (req, res) => {
 // Add new endpoint for analyzing top commanders
 app.post('/api/analyze-top-commanders', async (req, res) => {
     console.log("Received top commanders analysis request:", req.body);
-    console.log("Commander details with similarity scores:", req.body.commanders.map(c => ({
+    console.log("Analyzing top commanders with similarity scores:", req.body.commanders.map(c => ({
         name: c.name,
         similarity: c.similarity
     })));
@@ -346,34 +346,27 @@ app.post('/api/analyze-top-commanders', async (req, res) => {
         const { commanders, deckConcept } = req.body;
         
         const systemPrompt = `You are an expert Magic: The Gathering Commander deck analyst.
-Your task is to analyze the provided commanders and select the best matches for the deck concept.
+Your task is to analyze these top 10 potential commanders and select the best matches for the deck concept.
 
 IMPORTANT GUIDELINES:
-1. Analyze each commander's similarity score and mechanical fit
-2. Select ONLY the commanders that are truly good fits (1-5 commanders)
-3. Do not select commanders just to reach 5 selections
-4. Consider both mechanical and thematic alignment
-5. Pay special attention to commanders with similarity scores above 0.4
+1. These commanders are already pre-filtered by similarity to the deck concept
+2. Select 1-3 commanders that best fit both mechanically and thematically
+3. Pay special attention to commanders with similarity scores above 0.5
+4. Consider both direct and indirect theme support
 
 If you find suitable commanders, respond with:
 SELECTED: [comma-separated list of indices]
 [Detailed explanation for each selected commander]
 
-If no commanders are suitable, respond with:
+If none of these commanders are suitable, respond with:
 SEARCH: [new search query]
-[Explanation of why current options don't work]
+[Explanation of why current options don't work and what to look for instead]`;
 
-Your explanation should include:
-1. Why each selected commander fits the concept
-2. How their abilities align with the strategy
-3. Any potential synergies between selected commanders
-4. Suggestions for how they could work in the 99 if not chosen as the main commander`;
+        const userPrompt = `Analyze these top 10 commanders for the deck concept: "${deckConcept}"
 
-        const userPrompt = `Analyze these potential commanders for the deck concept: "${deckConcept}"
-
-Commander Details:
+Commander Details (sorted by similarity score):
 ${commanders.map((commander, index) => `
-${index + 1}. ${commander.name} (Similarity Score: ${commander.similarity ? commander.similarity.toFixed(3) : 'N/A'})
+${index + 1}. ${commander.name} (Similarity: ${commander.similarity ? commander.similarity.toFixed(3) : 'N/A'})
 Type: ${commander.type_line}
 Mana Cost: ${commander.mana_cost || 'N/A'}
 Color Identity: ${commander.color_identity.join(',')}
@@ -383,11 +376,11 @@ ${commander.keywords && commander.keywords.length > 0 ? `Keywords: ${commander.k
 `).join('\n')}
 
 Your task:
-1. Analyze how well each commander matches the deck concept
-2. Consider their mechanical synergies, color identity, and effectiveness
-3. Select ONLY the commanders that truly fit the concept (up to 5)
-4. Provide detailed explanations for why each selected commander fits
-5. If selecting fewer than 5, explain why these stand out from the others
+1. Analyze how well each commander mechanically supports the concept
+2. Consider their color identity and how it enables the strategy
+3. Select 1-3 commanders that truly fit the concept
+4. Explain why each selected commander would work well
+5. If suggesting a new search, explain what specific qualities to look for
 
 Remember to start your response with either SELECTED: or SEARCH:`;
 
@@ -395,17 +388,6 @@ Remember to start your response with either SELECTED: or SEARCH:`;
             systemPrompt,
             userPrompt: userPrompt.substring(0, 500) + '...' // Log first 500 chars of user prompt
         });
-
-        // Check OpenAI API key and organization ID
-        if (!process.env.OPENAI_API_KEY) {
-            console.error('OpenAI API key is not set in environment variables');
-            return res.status(500).json({ error: 'OpenAI API key not configured on server' });
-        }
-
-        if (!process.env.OPENAI_ORGANIZATION_ID) {
-            console.error('OpenAI Organization ID is not set in environment variables');
-            return res.status(500).json({ error: 'OpenAI Organization ID not configured on server' });
-        }
 
         const response = await axios.post('https://api.openai.com/v1/chat/completions', {
             model: "gpt-4",
@@ -588,7 +570,9 @@ app.post('/api/cards/search', async (req, res) => {
                 legalities: result.card.legalities,
                 edhrec_rank: result.card.edhrec_rank,
                 similarity: result.similarity
-            }));
+            }))
+            .sort((a, b) => b.similarity - a.similarity) // Sort by similarity score
+            .slice(0, 10); // Only take top 10
             
             return res.json(formattedResults || []);
         } catch (searchError) {
