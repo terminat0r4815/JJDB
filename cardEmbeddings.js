@@ -900,7 +900,7 @@ class CardEmbeddingService {
                     
                     cardTypes.forEach(type => {
                         if (card.type_line.toLowerCase().includes(type.toLowerCase())) {
-                            similarity += 0.15;
+                            similarity += 0.25;
                         }
                     });
                 }
@@ -910,7 +910,7 @@ class CardEmbeddingService {
                     const tribalWords = query.toLowerCase().split(/\s+/);
                     tribalWords.forEach(word => {
                         if (word.length > 3 && card.oracle_text.toLowerCase().includes(word)) {
-                            similarity += 0.1;
+                            similarity += 0.25;
                         }
                     });
                 }
